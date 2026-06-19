@@ -1,0 +1,13 @@
+/node_modules
+/build
+/dist
+/output
+
+# misc
+.DS_Store
+.env*.local
+.env.dev
+.env.staging
+.env.prod
+.env
+yarn.lock
