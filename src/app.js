@@ -8,8 +8,8 @@ const gmailRoutes = require('./routes/Gmail');
 const authRoutes = require('./routes/Auth');
 const activityLogRoutes = require('./routes/ActivityLogs');
 const entityRoutes = require('./routes/Entity');
-// const inventoryRoutes = require('./routes/inventoryRoutes');
-// const invoiceRoutes = require('./routes/invoiceRoutes');
+const inventoryRoutes = require('./routes/Inventory');
+const invoiceRoutes = require('./routes/Invoice');
 const userRoutes = require('./routes/User');
 
 // Import database connection
@@ -56,11 +56,11 @@ app.use((req, res, next) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/gmail', gmailRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/entities', entityRoutes);
-// app.use('/api/inventory', inventoryRoutes);
-// app.use('/api/invoices', invoiceRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/invoices', invoiceRoutes);
 app.use('/api/users', userRoutes);
 
 // Health check

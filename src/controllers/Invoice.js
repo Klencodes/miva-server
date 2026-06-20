@@ -1,5 +1,5 @@
 // controllers/invoiceController.js
-const InvoiceService = require('../services/invoiceService');
+const InvoiceService = require('../services/Invoice');
 const { getCurrentEntity } = require('../middleware/auth');
 
 class InvoiceController {

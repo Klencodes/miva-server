@@ -1,0 +1,459 @@
+// services/inventoryService.js
+const Inventory = require('../models/Inventory');
+const { logActivity } = require('../utils/ActivityLogger');
+
+class InventoryService {
+  /**
+   * Get all inventory items with pagination and filtering
+   */
+  async getItems(entityId, filters = {}, page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    const query = { entity_id: entityId };
+
+    // Apply filters
+    if (filters.search) {
+      query.$or = [
+        { name: { $regex: filters.search, $options: 'i' } },
+        { 'specs.part_number': { $regex: filters.search, $options: 'i' } },
+        { supplier: { $regex: filters.search, $options: 'i' } },
+      ];
+    }
+
+    if (filters.type) {
+      query.type = filters.type;
+    }
+
+    if (filters.min_quantity !== undefined) {
+      query.quantity = { ...query.quantity, $gte: parseInt(filters.min_quantity) };
+    }
+
+    if (filters.max_quantity !== undefined) {
+      query.quantity = { ...query.quantity, $lte: parseInt(filters.max_quantity) };
+    }
+
+    if (filters.min_price !== undefined) {
+      query.price = { ...query.price, $gte: parseFloat(filters.min_price) };
+    }
+
+    if (filters.max_price !== undefined) {
+      query.price = { ...query.price, $lte: parseFloat(filters.max_price) };
+    }
+
+    if (filters.stock_status === 'low_stock') {
+      query.$expr = { $lte: ['$quantity', '$reorder_threshold'] };
+      query.quantity = { $gt: 0 };
+    } else if (filters.stock_status === 'out_of_stock') {
+      query.quantity = 0;
+    } else if (filters.stock_status === 'in_stock') {
+      query.quantity = { $gt: 0 };
+    }
+
+    if (filters.supplier) {
+      query.supplier = { $regex: filters.supplier, $options: 'i' };
+    }
+
+    const [items, total] = await Promise.all([
+      Inventory.find(query)
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit),
+      Inventory.countDocuments(query),
+    ]);
+
+    return {
+      items: items.map(i => i.toSafeObject()),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Get inventory item by UUID
+   */
+  async getItemByUuid(entityId, uuid) {
+    const item = await Inventory.findOne({ entity_id: entityId, uuid });
+    if (!item) {
+      throw new Error('INVENTORY_ITEM_NOT_FOUND');
+    }
+    return item.toSafeObject();
+  }
+
+  /**
+   * Get inventory item by part number
+   */
+  async getItemByPartNumber(entityId, partNumber) {
+    const item = await Inventory.findOne({ 
+      entity_id: entityId, 
+      'specs.part_number': partNumber 
+    });
+    if (!item) {
+      throw new Error('INVENTORY_ITEM_NOT_FOUND');
+    }
+    return item.toSafeObject();
+  }
+
+  /**
+   * Create inventory item
+   */
+  async createItem(entityId, data, req) {
+    const {
+      name,
+      type,
+      unit,
+      quantity = 0,
+      specs = {},
+      reorder_threshold = 5,
+      cost = 0,
+      price = 0,
+      location,
+      supplier,
+      image,
+    } = data;
+
+    // Validate required fields
+    if (!name) {
+      throw new Error('NAME_REQUIRED');
+    }
+
+    // Check for duplicate part number
+    if (specs.part_number) {
+      const existing = await Inventory.findOne({ 
+        entity_id: entityId, 
+        'specs.part_number': specs.part_number 
+      });
+      if (existing) {
+        throw new Error('PART_NUMBER_ALREADY_EXISTS');
+      }
+    }
+
+    // Create item
+    const item = new Inventory({
+      entity_id: entityId,
+      name,
+      type: type || 'other',
+      unit: unit || 'pieces',
+      quantity: Math.max(0, quantity),
+      specs,
+      reorder_threshold: Math.max(0, reorder_threshold),
+      cost: Math.max(0, cost),
+      price: Math.max(0, price),
+      location,
+      supplier,
+      image,
+      created_by: req.user?.uuid || null,
+      updated_by: req.user?.uuid || null,
+    });
+
+    await item.save();
+
+    // Log activity
+    await logActivity({
+      user_id: req.user?._id || null,
+      user_name: req.user?.name || 'system',
+      user_role: req.user?.role || 'system',
+      action: 'inventory_created',
+      description: `Inventory item created: ${item.name}`,
+      metadata: {
+        item_id: item.uuid,
+        item_name: item.name,
+        type: item.type,
+        quantity: item.quantity,
+        created_by: req.user?.email || 'system',
+      },
+      req,
+      status: 'success'
+    });
+
+    return item.toSafeObject();
+  }
+
+  /**
+   * Update inventory item
+   */
+  async updateItem(entityId, uuid, data, req) {
+    const item = await Inventory.findOne({ entity_id: entityId, uuid });
+    if (!item) {
+      throw new Error('INVENTORY_ITEM_NOT_FOUND');
+    }
+
+    const {
+      name,
+      type,
+      unit,
+      quantity,
+      specs,
+      reorder_threshold,
+      cost,
+      price,
+      location,
+      supplier,
+      image,
+    } = data;
+
+    // Check for duplicate part number
+    if (specs?.part_number && specs.part_number !== item.specs?.part_number) {
+      const existing = await Inventory.findOne({ 
+        entity_id: entityId, 
+        'specs.part_number': specs.part_number,
+        uuid: { $ne: uuid }
+      });
+      if (existing) {
+        throw new Error('PART_NUMBER_ALREADY_EXISTS');
+      }
+    }
+
+    // Update fields
+    if (name) item.name = name;
+    if (type) item.type = type;
+    if (unit) item.unit = unit;
+    if (quantity !== undefined) item.quantity = Math.max(0, quantity);
+    if (specs) item.specs = { ...item.specs, ...specs };
+    if (reorder_threshold !== undefined) item.reorder_threshold = Math.max(0, reorder_threshold);
+    if (cost !== undefined) item.cost = Math.max(0, cost);
+    if (price !== undefined) item.price = Math.max(0, price);
+    if (location !== undefined) item.location = location;
+    if (supplier !== undefined) item.supplier = supplier;
+    if (image !== undefined) item.image = image;
+
+    item.updated_by = req.user?.uuid || null;
+    await item.save();
+
+    // Log activity
+    await logActivity({
+      user_id: req.user?._id || null,
+      user_name: req.user?.name || 'system',
+      user_role: req.user?.role || 'system',
+      action: 'inventory_updated',
+      description: `Inventory item updated: ${item.name}`,
+      metadata: {
+        item_id: item.uuid,
+        item_name: item.name,
+        updated_fields: Object.keys(data),
+        updated_by: req.user?.email || 'system',
+      },
+      req,
+      status: 'success'
+    });
+
+    return item.toSafeObject();
+  }
+
+  /**
+   * Delete inventory item
+   */
+  async deleteItem(entityId, uuid, req) {
+    const item = await Inventory.findOne({ entity_id: entityId, uuid });
+    if (!item) {
+      throw new Error('INVENTORY_ITEM_NOT_FOUND');
+    }
+
+    await item.deleteOne();
+
+    // Log activity
+    await logActivity({
+      user_id: req.user?._id || null,
+      user_name: req.user?.name || 'system',
+      user_role: req.user?.role || 'system',
+      action: 'inventory_deleted',
+      description: `Inventory item deleted: ${item.name}`,
+      metadata: {
+        item_id: item.uuid,
+        item_name: item.name,
+        deleted_by: req.user?.email || 'system',
+      },
+      req,
+      status: 'success'
+    });
+
+    return { message: 'Inventory item deleted successfully' };
+  }
+
+  /**
+   * Adjust stock quantity
+   */
+  async adjustStock(entityId, uuid, adjustment, req) {
+    const item = await Inventory.findOne({ entity_id: entityId, uuid });
+    if (!item) {
+      throw new Error('INVENTORY_ITEM_NOT_FOUND');
+    }
+
+    const { quantity, type = 'set', reason } = adjustment;
+
+    if (quantity === undefined || quantity === null) {
+      throw new Error('QUANTITY_REQUIRED');
+    }
+
+    let oldQuantity = item.quantity;
+    let newQuantity;
+
+    switch (type) {
+      case 'add':
+        newQuantity = item.quantity + quantity;
+        break;
+      case 'subtract':
+        if (item.quantity < quantity) {
+          throw new Error('INSUFFICIENT_STOCK');
+        }
+        newQuantity = item.quantity - quantity;
+        break;
+      case 'set':
+      default:
+        newQuantity = Math.max(0, quantity);
+        break;
+    }
+
+    item.quantity = newQuantity;
+    item.updated_by = req.user?.uuid || null;
+    await item.save();
+
+    // Log activity
+    await logActivity({
+      user_id: req.user?._id || null,
+      user_name: req.user?.name || 'system',
+      user_role: req.user?.role || 'system',
+      action: 'inventory_stock_adjusted',
+      description: `Stock adjusted for ${item.name}`,
+      metadata: {
+        item_id: item.uuid,
+        item_name: item.name,
+        old_quantity: oldQuantity,
+        new_quantity: newQuantity,
+        adjustment_type: type,
+        adjustment_amount: quantity,
+        reason: reason || 'Manual adjustment',
+        adjusted_by: req.user?.email || 'system',
+      },
+      req,
+      status: 'success'
+    });
+
+    return item.toSafeObject();
+  }
+
+  /**
+   * Get inventory statistics
+   */
+  async getInventoryStats(entityId) {
+    const stats = await Inventory.aggregate([
+      { $match: { entity_id: entityId } },
+      {
+        $group: {
+          _id: null,
+          total_items: { $sum: 1 },
+          total_quantity: { $sum: '$quantity' },
+          total_value: { $sum: { $multiply: ['$quantity', '$cost'] } },
+          total_price: { $sum: { $multiply: ['$quantity', '$price'] } },
+          avg_cost: { $avg: '$cost' },
+          avg_price: { $avg: '$price' },
+        },
+      },
+    ]);
+
+    const typeStats = await Inventory.aggregate([
+      { $match: { entity_id: entityId } },
+      {
+        $group: {
+          _id: '$type',
+          count: { $sum: 1 },
+          quantity: { $sum: '$quantity' },
+        },
+      },
+    ]);
+
+    const stockStatus = await Inventory.aggregate([
+      { $match: { entity_id: entityId } },
+      {
+        $group: {
+          _id: {
+            $switch: {
+              branches: [
+                { case: { $eq: ['$quantity', 0] }, then: 'out_of_stock' },
+                { case: { $lte: ['$quantity', '$reorder_threshold'] }, then: 'low_stock' },
+              ],
+              default: 'in_stock',
+            },
+          },
+          count: { $sum: 1 },
+          quantity: { $sum: '$quantity' },
+        },
+      },
+    ]);
+
+    return {
+      totals: stats[0] || {
+        total_items: 0,
+        total_quantity: 0,
+        total_value: 0,
+        total_price: 0,
+        avg_cost: 0,
+        avg_price: 0,
+      },
+      by_type: typeStats,
+      by_stock_status: stockStatus,
+    };
+  }
+
+  /**
+   * Get low stock items
+   */
+  async getLowStockItems(entityId, page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    const query = {
+      entity_id: entityId,
+      $expr: { $lte: ['$quantity', '$reorder_threshold'] },
+      quantity: { $gt: 0 },
+    };
+
+    const [items, total] = await Promise.all([
+      Inventory.find(query)
+        .sort({ quantity: 1 })
+        .skip(skip)
+        .limit(limit),
+      Inventory.countDocuments(query),
+    ]);
+
+    return {
+      items: items.map(i => i.toSafeObject()),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * Bulk create inventory items
+   */
+  async bulkCreateItems(entityId, itemsData, req) {
+    const results = [];
+    const errors = [];
+
+    for (const data of itemsData) {
+      try {
+        const item = await this.createItem(entityId, data, req);
+        results.push(item);
+      } catch (error) {
+        errors.push({
+          data,
+          error: error.message,
+        });
+      }
+    }
+
+    return {
+      created: results,
+      failed: errors,
+      total: itemsData.length,
+      success_count: results.length,
+      failure_count: errors.length,
+    };
+  }
+}
+
+module.exports = new InventoryService();

@@ -65,7 +65,7 @@ const InvoiceSchema = new mongoose.Schema(
       },
       cost: { type: Number, default: 0 },
       price: { type: Number, required: true, min: 0 },
-      description: String,
+      location: String,
       supplier: String,
       image: String,
     }],
@@ -116,10 +116,7 @@ const InvoiceSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    remaining_balance: {
-      type: Number,
-      default: 0,
-    },
+    // REMOVED: remaining_balance from schema (now a virtual)
     status: {
       type: String,
       enum: ['draft', 'quoted', 'invoiced', 'partially_paid', 'paid', 'cancelled', 'overdue'],
@@ -137,8 +134,12 @@ const InvoiceSchema = new mongoose.Schema(
       type: String,
       default: 'GHS',
     },
+    payment_method: {
+      type: String,
+      enum: ['Cash', 'MoMo', 'Bank', 'Credit'],
+    },
     payments: [{
-      payment_id: { type: String, ref: 'Payment' },
+      payment_id: { type: String },
       amount: { type: Number, required: true },
       method: {
         type: String,
@@ -160,9 +161,17 @@ const InvoiceSchema = new mongoose.Schema(
   }
 );
 
-// Virtual for remaining balance
+// Virtual for remaining balance - FIXED: removed from schema, now only virtual
 InvoiceSchema.virtual('remaining_balance').get(function() {
   return this.total - (this.amount_paid || 0);
+});
+
+// Virtual for payment status
+InvoiceSchema.virtual('payment_status').get(function() {
+  const remaining = this.remaining_balance;
+  if (remaining <= 0) return 'Paid';
+  if (this.amount_paid > 0) return 'Partial';
+  return 'Unpaid';
 });
 
 // Indexes
@@ -194,12 +203,10 @@ InvoiceSchema.pre('save', function(next) {
   // Calculate total
   this.total = taxableAmount + this.vat + this.nhil + this.getfund + this.covid_levy;
   
-  // Calculate remaining balance
-  this.remaining_balance = this.total - (this.amount_paid || 0);
-  
-  // Update status based on payment
+  // Update status based on payment (using virtual)
+  const remaining = this.total - (this.amount_paid || 0);
   if (this.status !== 'cancelled' && this.status !== 'draft') {
-    if (this.remaining_balance <= 0) {
+    if (remaining <= 0) {
       this.status = 'paid';
     } else if (this.amount_paid > 0) {
       this.status = 'partially_paid';
@@ -221,14 +228,7 @@ InvoiceSchema.methods.toSafeObject = function() {
 InvoiceSchema.methods.addPayment = function(paymentData) {
   this.payments.push(paymentData);
   this.amount_paid = (this.amount_paid || 0) + paymentData.amount;
-  this.remaining_balance = this.total - this.amount_paid;
-  
-  if (this.remaining_balance <= 0) {
-    this.status = 'paid';
-  } else if (this.amount_paid > 0) {
-    this.status = 'partially_paid';
-  }
-  
+  // Remaining balance is now a virtual, no need to set it
   return this;
 };
 
@@ -239,7 +239,7 @@ InvoiceSchema.methods.cancel = function() {
 
 InvoiceSchema.methods.markAsPaid = function() {
   this.amount_paid = this.total;
-  this.remaining_balance = 0;
+  // Remaining balance is now a virtual
   this.status = 'paid';
   return this;
 };
