@@ -14,11 +14,11 @@ class EntityController {
         search,
         country,
         is_active,
-        currency,
+        branch,
       } = req.query;
 
       const result = await EntityService.getEntities(
-        { search, country, is_active, currency },
+        { search, country, is_active, branch },
         parseInt(page),
         parseInt(limit),
       );
@@ -48,7 +48,7 @@ class EntityController {
         message: "Entity retrieved successfully",
         code: "ENTITY_FETCH_SUCCESS",
         success: true,
-        results: { entity },
+        results: entity,
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -69,7 +69,7 @@ class EntityController {
         message: "Entity retrieved successfully",
         code: "ENTITY_FETCH_SUCCESS",
         success: true,
-        results: { entity },
+        results: entity,
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -90,7 +90,7 @@ class EntityController {
         message: "Entity created successfully",
         code: "ENTITY_CREATED_SUCCESS",
         success: true,
-        results: { entity },
+        results: entity,
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -112,7 +112,7 @@ class EntityController {
         message: "Entity updated successfully",
         code: "ENTITY_UPDATED_SUCCESS",
         success: true,
-        results: { entity },
+        results: entity,
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -144,7 +144,7 @@ class EntityController {
           : "Entity deactivated successfully",
         code: "ENTITY_STATUS_UPDATED",
         success: true,
-        results: { entity },
+        results: entity,
       });
     } catch (error) {
       return this.handleError(error, res);

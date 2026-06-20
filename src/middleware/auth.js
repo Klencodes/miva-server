@@ -64,7 +64,6 @@ const authenticate = async (req, res, next) => {
  * Usage: router.get('/admin', authenticate, authorize('admin', 'super_admin'), handler)
  */
 const authorize = (...allowedRoles) => (req, res, next) => {
-  console.log(req.user, "req.user>>>>>")
   if (!req.user) {
     return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
   }

@@ -107,12 +107,14 @@ const UserSchema = new mongoose.Schema(
     created_by: { type: String }, // UUID of user who created this user
     updated_by: { type: String }, // UUID of user who last updated this user
     
-    // NEW: Entity/Organization associations
+    // Entity/Organization associations - User can have multiple entities
     entities: [{
       entity_id: { type: String, required: true },
+      name: { type: String, required: true },
+      branch: { type: String, required: true },
       role: { 
         type: String, 
-        enum: ['super_admin', 'admin', 'sales', 'viewer'],
+        enum: ['super_admin', 'admin', 'sales', 'viewer', 'technician'],
         default: 'sales'
       },
       joined_at: { type: Date, default: Date.now },
@@ -193,13 +195,13 @@ UserSchema.methods.getPermissionsArray = function() {
   return perms;
 };
 
-// NEW: Check if user has entity access
+// Check if user has entity access
 UserSchema.methods.hasEntityAccess = function(entityId) {
   if (this.role === UserRoles.SUPER_ADMIN) return true;
   return this.entities.some(e => e.entity_id === entityId);
 };
 
-// NEW: Get user's entities
+// Get user's entities
 UserSchema.methods.getEntityIds = function() {
   return this.entities.map(e => e.entity_id);
 };

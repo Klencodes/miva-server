@@ -11,8 +11,8 @@ router.use(authenticate);
 router.get('/', authorize('admin', 'super_admin'), EntityController.getEntities);
 router.post('/', authorize('admin', 'super_admin'), EntityController.createEntity);
 
-router.get('/stats', authorize('admin', 'super_admin', 'viewer'), EntityController.getEntityStats);
-router.get('/:uuid', authorize('admin', 'super_admin', 'viewer'), EntityController.getEntity);
+router.get('/stats', authorize('admin', 'super_admin', 'viewer', 'sales'), EntityController.getEntityStats);
+router.get('/:uuid', authorize('admin', 'super_admin', 'viewer', 'sales'), EntityController.getEntity);
 router.get('/email/:email', authorize('admin', 'super_admin'), EntityController.getEntityByEmail);
 router.put('/:uuid', authorize('admin', 'super_admin'), EntityController.updateEntity);
 router.patch('/:uuid/active', authorize('admin', 'super_admin'), EntityController.toggleEntityActive);

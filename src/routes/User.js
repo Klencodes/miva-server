@@ -4,9 +4,6 @@ const router = express.Router();
 const UserController = require('../controllers/User');
 const { authenticate, authorize } = require('../middleware/auth');
 
-// Public routes (if any)
-// router.post('/register', UserController.register);
-
 // Protected routes - all require authentication
 router.use(authenticate);
 
@@ -24,8 +21,9 @@ router.patch('/:uuid/password', authorize('admin', 'super_admin'), UserControlle
 router.delete('/:uuid', authorize('admin', 'super_admin'), UserController.deleteUser);
 router.delete('/:uuid/permanent', authorize('super_admin'), UserController.permanentDeleteUser);
 
-// Entity management routes
+// Entity management routes - Admin can assign one or more entities
 router.post('/:uuid/entities', authorize('admin', 'super_admin'), UserController.assignEntityToUser);
+router.post('/:uuid/entities/batch', authorize('admin', 'super_admin'), UserController.assignMultipleEntitiesToUser);
 router.delete('/:uuid/entities/:entity_id', authorize('admin', 'super_admin'), UserController.removeEntityFromUser);
 router.patch('/:uuid/entities/:entity_id/primary', authorize('admin', 'super_admin'), UserController.setPrimaryEntity);
 

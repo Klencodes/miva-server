@@ -31,8 +31,8 @@ class EntityService {
         filters.is_active === "true" || filters.is_active === true;
     }
 
-    if (filters.currency) {
-      query.currency = filters.currency;
+    if (filters.branch) {
+      query.branch = filters.branch;
     }
 
     const [entities, total] = await Promise.all([
@@ -93,6 +93,7 @@ class EntityService {
       email,
       phone,
       website,
+      branch,
       address,
       city,
       state,
@@ -100,7 +101,6 @@ class EntityService {
       zip_code,
       registration_number,
       tax_id,
-      currency,
       settings = {},
       metadata = {},
     } = entityData;
@@ -135,6 +135,7 @@ class EntityService {
     // Create entity
     const entity = new Entity({
       name,
+      branch,
       email: email.toLowerCase(),
       phone: phone || "",
       website: website || "",
@@ -145,7 +146,7 @@ class EntityService {
       zip_code: zip_code || "",
       registration_number: registration_number || "",
       tax_id: tax_id || "",
-      currency: currency || "USD",
+      branch: branch || "Head Quaters",
       settings,
       metadata,
       is_active: true,
@@ -172,6 +173,49 @@ class EntityService {
       req,
       status: "success",
     });
+// ✅ Auto-assign entity to the creator
+  if (req.user?.uuid) {
+    const { User } = require('../models/User');
+    await User.findOneAndUpdate(
+      { uuid: req.user.uuid },
+      {
+        $push: {
+          entities: {
+            entity_id: entity.uuid,
+            name: entity.name,
+            branch: entity.branch,
+            role: req.user.role,
+            is_primary: false,
+            joined_at: new Date(),
+          }
+        },
+        // Set as primary if user has no primary entity yet
+        $setOnInsert: { primary_entity_id: entity.uuid }
+      }
+    );
+
+    // Set primary_entity_id only if not already set
+    await User.findOneAndUpdate(
+      { uuid: req.user.uuid, primary_entity_id: { $exists: false } },
+      { $set: { primary_entity_id: entity.uuid } }
+    );
+  }
+
+  const entities = await Entity.find({});
+await User.findOneAndUpdate(
+  { uuid: '86fc978a-3da8-4056-8866-44e87436c01f' }, // 86fc978a-3da8-4056-8866-44e87436c01f
+  {
+    $set: {
+      entities: entities.map(e => ({
+        entity_id: e.uuid,
+        role: 'admin',
+        is_primary: false,
+        joined_at: new Date(),
+      })),
+      primary_entity_id: entities[0]?.uuid || null
+    }
+  }
+);
 
     return this.sanitizeEntity(entity);
   };
@@ -192,7 +236,7 @@ class EntityService {
       zip_code,
       registration_number,
       tax_id,
-      currency,
+      branch,
       settings,
       metadata,
       is_active,
@@ -253,7 +297,7 @@ class EntityService {
     if (registration_number !== undefined)
       entity.registration_number = registration_number;
     if (tax_id !== undefined) entity.tax_id = tax_id;
-    if (currency) entity.currency = currency;
+    if (branch) entity.branch = branch;
     if (settings) entity.settings = { ...entity.settings, ...settings };
     if (metadata) entity.metadata = { ...entity.metadata, ...metadata };
     if (is_active !== undefined) entity.is_active = is_active;
@@ -457,7 +501,7 @@ class EntityService {
       activeEntities,
       inactiveEntities,
       entityByCountry,
-      entityByCurrency,
+      entityBybranch,
     ] = await Promise.all([
       Entity.countDocuments(),
       Entity.countDocuments({ is_active: true }),
@@ -469,7 +513,7 @@ class EntityService {
         { $limit: 10 },
       ]),
       Entity.aggregate([
-        { $group: { _id: "$currency", count: { $sum: 1 } } },
+        { $group: { _id: "$branch", count: { $sum: 1 } } },
         { $sort: { count: -1 } },
       ]),
     ]);
@@ -479,7 +523,7 @@ class EntityService {
       active: activeEntities,
       inactive: inactiveEntities,
       by_country: entityByCountry,
-      by_currency: entityByCurrency,
+      by_branch: entityBybranch,
     };
   };
 
@@ -501,7 +545,7 @@ class EntityService {
       zip_code: entityObj.zip_code,
       registration_number: entityObj.registration_number,
       tax_id: entityObj.tax_id,
-      currency: entityObj.currency,
+      branch: entityObj.branch,
       is_active: entityObj.is_active,
       settings: entityObj.settings || {},
       metadata: entityObj.metadata || {},

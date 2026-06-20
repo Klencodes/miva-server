@@ -15,6 +15,11 @@ const EntitySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+     branch: {
+      type: String,
+      required: false,
+      trim: true,
+    },
     email: {
       type: String,
       required: true,
@@ -59,11 +64,7 @@ const EntitySchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    currency: {
-      type: String,
-      default: "USD",
-      trim: true,
-    },
+   
     is_active: {
       type: Boolean,
       default: true,
