@@ -1,5 +1,5 @@
 const { google } = require('googleapis');
-const { oauth2Client, setCredentials, refreshToken } = require('../config/googleConfig');
+const { oauth2Client, setCredentials, refreshToken } = require('../config/google');
 
 class GmailService {
   constructor() {

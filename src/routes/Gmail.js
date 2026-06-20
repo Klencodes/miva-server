@@ -1,7 +1,6 @@
-// backend/src/routes/gmailRoutes.js
 const express = require('express');
 const router = express.Router();
-const gmailController = require('../controllers/gmailController');
+const gmailController = require('../controllers/Gmail');
 
 // ==================== AUTH ROUTES ====================
 router.get('/auth-url', gmailController.getAuthUrl);
