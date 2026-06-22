@@ -4,7 +4,7 @@ const router = express.Router();
 const DashboardController = require('../controllers/Dashboard');
 const { 
   authenticate, 
-  requireEntity
+  requireEntity 
 } = require('../middleware/auth');
 
 // All routes require authentication

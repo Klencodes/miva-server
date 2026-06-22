@@ -55,7 +55,7 @@ class InventoryController {
         message: "Inventory item retrieved successfully",
         code: "INVENTORY_ITEM_FETCH_SUCCESS",
         success: true,
-        results: { item }
+        results: item
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -77,7 +77,7 @@ class InventoryController {
         message: "Inventory item retrieved successfully",
         code: "INVENTORY_ITEM_FETCH_SUCCESS",
         success: true,
-        results: { item }
+        results: item
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -146,7 +146,7 @@ class InventoryController {
         message: "Inventory item created successfully",
         code: "INVENTORY_CREATED_SUCCESS",
         success: true,
-        results: { item }
+        results: item
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -195,7 +195,7 @@ class InventoryController {
         message: "Inventory item updated successfully",
         code: "INVENTORY_UPDATED_SUCCESS",
         success: true,
-        results: { item }
+        results: item
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -218,7 +218,7 @@ class InventoryController {
         message: "Stock adjusted successfully",
         code: "STOCK_ADJUSTED_SUCCESS",
         success: true,
-        results: { item }
+        results: item
       });
     } catch (error) {
       return this.handleError(error, res);

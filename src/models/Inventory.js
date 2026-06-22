@@ -19,6 +19,11 @@ const InventorySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    part_number: {
+      type: String,
+      trim: true,
+      index: true,
+    },
     type: {
       type: String,
       enum: ['hose', 'fitting', 'ferrule', 'assembly', 'adapter', 'coupling', 'other'],
@@ -36,20 +41,6 @@ const InventorySchema = new mongoose.Schema(
       required: true,
       default: 0,
       min: 0,
-    },
-    specs: {
-      sae: { type: String, trim: true },
-      pressure: { type: Number, min: 0 },
-      thread_type: {
-        type: String,
-        enum: ['BSP', 'JIC', 'NPT', 'ORFS', 'SAE', 'Komatsu', 'Metric'],
-      },
-      diameter: { type: Number, min: 0 },
-      material: { type: String, trim: true },
-      part_number: { type: String, trim: true },
-      angle: { type: Number, min: 0, max: 360 },
-      working_temp: { type: String, trim: true },
-      assembly_length: { type: Number, min: 0 },
     },
     reorder_threshold: {
       type: Number,
@@ -69,10 +60,6 @@ const InventorySchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    location: {
-      type: String,
-      trim: true,
-    },
     supplier: {
       type: String,
       trim: true,
@@ -80,6 +67,12 @@ const InventorySchema = new mongoose.Schema(
     image: {
       type: String,
       trim: true,
+    },
+    // Flexible metadata field - can hold anything
+    metadata: {
+      type: Map,
+      of: mongoose.Schema.Types.Mixed,
+      default: {},
     },
     created_by: { type: String },
     updated_by: { type: String },
@@ -103,18 +96,28 @@ InventorySchema.virtual('total_value').get(function() {
   return this.quantity * this.cost;
 });
 
+// Virtual for total price
+InventorySchema.virtual('total_price_value').get(function() {
+  return this.quantity * this.price;
+});
+
 // Indexes
 InventorySchema.index({ entity_id: 1, name: 1 });
+InventorySchema.index({ entity_id: 1, part_number: 1 });
 InventorySchema.index({ entity_id: 1, type: 1 });
-InventorySchema.index({ entity_id: 1, 'specs.part_number': 1 });
 InventorySchema.index({ entity_id: 1, supplier: 1 });
 InventorySchema.index({ entity_id: 1, quantity: 1 });
+InventorySchema.index({ entity_id: 1, 'metadata.$**': 1 });
 
 // Pre-save middleware
 InventorySchema.pre('save', function(next) {
   // Trim name
   if (this.name) {
     this.name = this.name.trim();
+  }
+  // Trim part_number
+  if (this.part_number) {
+    this.part_number = this.part_number.trim();
   }
   next();
 });
@@ -141,6 +144,23 @@ InventorySchema.methods.reduceStock = function(quantity) {
 InventorySchema.methods.increaseStock = function(quantity) {
   this.quantity += quantity;
   return this;
+};
+
+// Static method to get stock summary
+InventorySchema.statics.getStockSummary = async function(entityId) {
+  return this.aggregate([
+    { $match: { entity_id: entityId } },
+    {
+      $group: {
+        _id: '$type',
+        total_items: { $sum: 1 },
+        total_quantity: { $sum: '$quantity' },
+        total_value: { $sum: { $multiply: ['$quantity', '$cost'] } },
+        avg_cost: { $avg: '$cost' },
+        avg_price: { $avg: '$price' },
+      },
+    },
+  ]);
 };
 
 const Inventory = mongoose.model("Inventory", InventorySchema);

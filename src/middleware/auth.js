@@ -1,8 +1,22 @@
+// middleware/auth.js
 const jwt = require('jsonwebtoken');
 const { logActivity } = require('../utils/ActivityLogger');
 
 const AUTO_LOGOUT_ROLES = ['sales', 'viewer', 'technician'];
 const AUTO_LOGOUT_TTL_SECONDS = 60 * 60;
+
+const ActivityActions = {
+  SESSION_EXPIRED: 'session_expired',
+  LOGIN: 'login',
+  LOGOUT: 'logout',
+  USER_CREATED: 'user_created',
+  USER_UPDATED: 'user_updated',
+  USER_DELETED: 'user_deleted',
+  PASSWORD_CHANGED: 'password_changed',
+  ENTITY_CREATED: 'entity_created',
+  ENTITY_UPDATED: 'entity_updated',
+  ENTITY_DELETED: 'entity_deleted',
+};
 
 const authenticate = async (req, res, next) => {
   try {
@@ -50,19 +64,14 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-// ─── NEW: x-entity middleware ─────────────────────────────────────────────────
+const getCurrentEntity = (req) => {
+  if (req.entityId) {
+    return req.entityId;
+  }
+  const entityId = req.headers['x-entity'];
+  return entityId || null;
+};
 
-/**
- * Validates the x-entity header against the authenticated user's entity access.
- *
- * Rules:
- *  - Header is required on all routes that use this middleware.
- *  - super_admin bypasses entity checks (can access any entity).
- *  - All other roles must have the requested entity UUID in their
- *    token's `entities` array (e.g. decoded.entities = ['uuid-1', 'uuid-2']).
- *
- * Usage: router.get('/inventory', authenticate, requireEntity, authorize('admin'), handler)
- */
 const requireEntity = (req, res, next) => {
   const entityId = req.headers['x-entity'];
 
@@ -73,10 +82,18 @@ const requireEntity = (req, res, next) => {
     });
   }
 
-  // super_admin can act on any entity — skip membership check
+  // super_admin and admin can access any entity including ALL_ENTITIES
   if (req.user.role === 'super_admin' || req.user.role === 'admin') {
     req.entityId = entityId;
     return next();
+  }
+
+  // ALL_ENTITIES is restricted to super_admin/admin only
+  if (entityId === 'ALL_ENTITIES') {
+    return res.status(403).json({
+      error: 'Access to all entities is not permitted.',
+      code: 'ENTITY_ACCESS_DENIED',
+    });
   }
 
   // All other roles must belong to the requested entity
@@ -88,12 +105,9 @@ const requireEntity = (req, res, next) => {
     });
   }
 
-  // Attach for use in downstream handlers/services
   req.entityId = entityId;
   next();
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 const authorize = (...allowedRoles) => (req, res, next) => {
   if (!req.user) {
@@ -115,4 +129,10 @@ const requirePermission = (permission) => (req, res, next) => {
   next();
 };
 
-module.exports = { authenticate, authorize, requirePermission, requireEntity };
+module.exports = {
+  authenticate,
+  authorize,
+  requirePermission,
+  requireEntity,
+  getCurrentEntity,
+};

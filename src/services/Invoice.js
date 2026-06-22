@@ -5,16 +5,6 @@ const { logActivity } = require('../utils/ActivityLogger');
 
 class InvoiceService {
   /**
-   * Generate invoice number
-   */
-  generateInvoiceNumber(entityId) {
-    const prefix = 'INV';
-    const timestamp = new Date().getTime().toString().slice(-8);
-    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    return `${prefix}-${entityId.slice(0, 6)}-${timestamp}-${random}`;
-  }
-
-  /**
    * Get all invoices with pagination and filtering
    */
   async getInvoices(entityId, filters = {}, page = 1, limit = 10) {
@@ -33,6 +23,10 @@ class InvoiceService {
 
     if (filters.status) {
       query.status = filters.status;
+    }
+
+    if (filters.payment_status) {
+      query.payment_status = filters.payment_status;
     }
 
     if (filters.date_from) {
@@ -101,6 +95,7 @@ class InvoiceService {
    */
   async createInvoice(entityId, data, req) {
     const {
+      number,
       date,
       due_date,
       customer,
@@ -108,10 +103,15 @@ class InvoiceService {
       discount_type = 'percentage',
       discount_rate = 0,
       vat_rate = 0,
+      nhil_rate = 0,
+      getfund_rate = 0,
+      covid_levy_rate = 0,
       notes,
       terms,
       currency = 'GHS',
       status = 'draft',
+      payments = [],
+      amount_paid = 0,
     } = data;
 
     // Validate required fields
@@ -130,9 +130,6 @@ class InvoiceService {
       }
     }
 
-    // Generate invoice number
-    const number = this.generateInvoiceNumber(entityId);
-
     // Create invoice
     const invoice = new Invoice({
       entity_id: entityId,
@@ -144,15 +141,20 @@ class InvoiceService {
       discount_type,
       discount_rate,
       vat_rate,
+      nhil_rate,
+      getfund_rate,
+      covid_levy_rate,
       notes,
       terms,
       currency,
       status,
+      payments: payments || [],
+      amount_paid: amount_paid || 0,
       created_by: req.user?.uuid || null,
       updated_by: req.user?.uuid || null,
     });
 
-    // Calculate totals (triggered by pre-save hook)
+    // Calculate totals and update statuses (triggered by pre-save hook)
     await invoice.save();
 
     // Log activity
@@ -186,8 +188,19 @@ class InvoiceService {
     }
 
     // Prevent editing paid or cancelled invoices
-    if (invoice.status === 'paid' || invoice.status === 'cancelled') {
+    if (invoice.status === 'cancelled') {
       throw new Error('INVOICE_CANNOT_BE_MODIFIED');
+    }
+
+    // If invoice is paid, only allow certain updates
+    if (invoice.payment_status === 'paid' && invoice.status === 'invoiced') {
+      // Only allow notes and terms updates for paid invoices
+      const allowedFields = ['notes', 'terms'];
+      const requestedUpdates = Object.keys(data);
+      const hasDisallowedUpdates = requestedUpdates.some(field => !allowedFields.includes(field));
+      if (hasDisallowedUpdates) {
+        throw new Error('PAID_INVOICE_CANNOT_BE_MODIFIED');
+      }
     }
 
     const {
@@ -198,6 +211,9 @@ class InvoiceService {
       discount_type,
       discount_rate,
       vat_rate,
+      nhil_rate,
+      getfund_rate,
+      covid_levy_rate,
       notes,
       terms,
       currency,
@@ -212,10 +228,15 @@ class InvoiceService {
     if (discount_type) invoice.discount_type = discount_type;
     if (discount_rate !== undefined) invoice.discount_rate = discount_rate;
     if (vat_rate !== undefined) invoice.vat_rate = vat_rate;
+    if (nhil_rate !== undefined) invoice.nhil_rate = nhil_rate;
+    if (getfund_rate !== undefined) invoice.getfund_rate = getfund_rate;
+    if (covid_levy_rate !== undefined) invoice.covid_levy_rate = covid_levy_rate;
     if (notes !== undefined) invoice.notes = notes;
     if (terms !== undefined) invoice.terms = terms;
     if (currency) invoice.currency = currency;
-    if (status && status !== 'paid' && status !== 'cancelled') {
+    
+    // Only update status if not paid or cancelled
+    if (status && status !== 'cancelled' && invoice.payment_status !== 'paid') {
       invoice.status = status;
     }
 
@@ -257,7 +278,7 @@ class InvoiceService {
       throw new Error('INVOICE_CANCELLED');
     }
 
-    if (invoice.status === 'paid') {
+    if (invoice.payment_status === 'paid') {
       throw new Error('INVOICE_ALREADY_PAID');
     }
 
@@ -267,7 +288,8 @@ class InvoiceService {
       throw new Error('INVALID_PAYMENT_AMOUNT');
     }
 
-    if (amount > invoice.remaining_balance) {
+    const remaining = invoice.total - invoice.amount_paid;
+    if (amount > remaining) {
       throw new Error('PAYMENT_EXCEEDS_BALANCE');
     }
 
@@ -303,7 +325,7 @@ class InvoiceService {
 
     // Log activity
     await logActivity({
-      user_id: req.user?._id || null,
+      user_id: req.user?._id || req.user?.uuid || null,
       user_name: req.user?.name || 'system',
       user_role: req.user?.role || 'system',
       action: 'invoice_payment_added',
@@ -322,7 +344,7 @@ class InvoiceService {
 
     return {
       invoice: invoice.toSafeObject(),
-      payment: payment.toSafeObject(),
+      payment: payment,
     };
   }
 
@@ -339,15 +361,17 @@ class InvoiceService {
       throw new Error('INVOICE_CANCELLED');
     }
 
-    if (invoice.status === 'paid') {
+    if (invoice.payment_status === 'paid') {
       throw new Error('INVOICE_ALREADY_PAID');
     }
+
+    const remaining = invoice.total - invoice.amount_paid;
 
     // Create payment record for full amount
     const payment = new Payment({
       entity_id: entityId,
       invoice_id: invoice.uuid,
-      amount: invoice.remaining_balance,
+      amount: remaining,
       method: 'Credit',
       reference: `PAID-${invoice.number}`,
       date: new Date(),
@@ -396,7 +420,7 @@ class InvoiceService {
       throw new Error('INVOICE_ALREADY_CANCELLED');
     }
 
-    if (invoice.status === 'paid') {
+    if (invoice.payment_status === 'paid') {
       throw new Error('PAID_INVOICE_CANNOT_BE_CANCELLED');
     }
 
@@ -476,6 +500,18 @@ class InvoiceService {
       },
     ]);
 
+    const paymentStats = await Invoice.aggregate([
+      { $match: { entity_id: entityId } },
+      {
+        $group: {
+          _id: '$payment_status',
+          count: { $sum: 1 },
+          total_amount: { $sum: '$total' },
+          total_paid: { $sum: '$amount_paid' },
+        },
+      },
+    ]);
+
     const totals = await Invoice.aggregate([
       { $match: { entity_id: entityId } },
       {
@@ -484,7 +520,7 @@ class InvoiceService {
           total_invoices: { $sum: 1 },
           total_amount: { $sum: '$total' },
           total_paid: { $sum: '$amount_paid' },
-          total_remaining: { $sum: '$remaining_balance' },
+          total_remaining: { $sum: { $subtract: ['$total', '$amount_paid'] } },
         },
       },
     ]);
@@ -492,6 +528,12 @@ class InvoiceService {
     const result = {
       by_status: stats.map(s => ({
         status: s._id,
+        count: s.count,
+        total_amount: s.total_amount,
+        total_paid: s.total_paid,
+      })),
+      by_payment_status: paymentStats.map(s => ({
+        payment_status: s._id,
         count: s.count,
         total_amount: s.total_amount,
         total_paid: s.total_paid,

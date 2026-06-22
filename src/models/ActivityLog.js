@@ -30,9 +30,11 @@ const ActivityActions = {
   // Settings
   SETTINGS_UPDATED: 'SETTINGS_UPDATED',
 
-  ENTITY_CREATED: 'entity_created',
-  ENTITY_UPDATED: 'entity_updated',
-  ENTITY_DELETED: 'entity_deleted',
+  DASHBOARD_VIEW: 'DASHBOARD_VIEW',
+  
+  ENTITY_CREATED: 'ENTITY_CREATED',
+  ENTITY_UPDATED: 'ENTITY_UPDATED',
+  ENTITY_DELETED: 'ENTITY_DELETED',
 };
 
 const ActivityLogSchema = new mongoose.Schema(

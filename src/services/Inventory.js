@@ -14,8 +14,9 @@ class InventoryService {
     if (filters.search) {
       query.$or = [
         { name: { $regex: filters.search, $options: 'i' } },
-        { 'specs.part_number': { $regex: filters.search, $options: 'i' } },
+        { part_number: { $regex: filters.search, $options: 'i' } },
         { supplier: { $regex: filters.search, $options: 'i' } },
+        { 'metadata.location': { $regex: filters.search, $options: 'i' } },
       ];
     }
 
@@ -50,6 +51,12 @@ class InventoryService {
 
     if (filters.supplier) {
       query.supplier = { $regex: filters.supplier, $options: 'i' };
+    }
+
+    if (filters.metadata) {
+      Object.entries(filters.metadata).forEach(([key, value]) => {
+        query[`metadata.${key}`] = value;
+      });
     }
 
     const [items, total] = await Promise.all([
@@ -88,7 +95,7 @@ class InventoryService {
   async getItemByPartNumber(entityId, partNumber) {
     const item = await Inventory.findOne({ 
       entity_id: entityId, 
-      'specs.part_number': partNumber 
+      part_number: partNumber 
     });
     if (!item) {
       throw new Error('INVENTORY_ITEM_NOT_FOUND');
@@ -96,80 +103,176 @@ class InventoryService {
     return item.toSafeObject();
   }
 
-  /**
-   * Create inventory item
-   */
-  async createItem(entityId, data, req) {
-    const {
-      name,
-      type,
-      unit,
-      quantity = 0,
-      specs = {},
-      reorder_threshold = 5,
-      cost = 0,
-      price = 0,
-      location,
-      supplier,
-      image,
-    } = data;
+/**
+ * Create inventory item
+ */
+async createItem(entityId, data, req) {
+  const {
+    name,
+    part_number,
+    type,
+    unit,
+    quantity = 0,
+    metadata = {},
+    reorder_threshold = 5,
+    cost = 0,
+    price = 0,
+    supplier,
+    image,
+  } = data;
 
-    // Validate required fields
-    if (!name) {
-      throw new Error('NAME_REQUIRED');
-    }
-
-    // Check for duplicate part number
-    if (specs.part_number) {
-      const existing = await Inventory.findOne({ 
-        entity_id: entityId, 
-        'specs.part_number': specs.part_number 
-      });
-      if (existing) {
-        throw new Error('PART_NUMBER_ALREADY_EXISTS');
-      }
-    }
-
-    // Create item
-    const item = new Inventory({
-      entity_id: entityId,
-      name,
-      type: type || 'other',
-      unit: unit || 'pieces',
-      quantity: Math.max(0, quantity),
-      specs,
-      reorder_threshold: Math.max(0, reorder_threshold),
-      cost: Math.max(0, cost),
-      price: Math.max(0, price),
-      location,
-      supplier,
-      image,
-      created_by: req.user?.uuid || null,
-      updated_by: req.user?.uuid || null,
-    });
-
-    await item.save();
-
-    // Log activity
-    await logActivity({
-      user_id: req.user?._id || null,
-      user_name: req.user?.name || 'system',
-      user_role: req.user?.role || 'system',
-      action: 'inventory_created',
-      description: `Inventory item created: ${item.name}`,
-      metadata: {
-        item_id: item.uuid,
-        item_name: item.name,
-        type: item.type,
-        quantity: item.quantity,
-        created_by: req.user?.email || 'system',
-      },
-      req,
-      status: 'success'
-    });
-
-    return item.toSafeObject();
+  // Validate required fields
+  if (!name) {
+    throw new Error('NAME_REQUIRED');
   }
+
+  // Check for duplicate part number
+  if (part_number) {
+    const existing = await Inventory.findOne({ 
+      entity_id: entityId, 
+      part_number: part_number 
+    });
+    if (existing) {
+      throw new Error('PART_NUMBER_ALREADY_EXISTS');
+    }
+  }
+
+  // Create a Map for metadata if needed
+  let metadataMap;
+  if (metadata && typeof metadata === 'object') {
+    metadataMap = new Map(Object.entries(metadata));
+  } else {
+    metadataMap = new Map();
+  }
+
+  // Create item
+  const item = new Inventory({
+    entity_id: entityId,
+    name,
+    part_number: part_number || undefined,
+    type: type || 'other',
+    unit: unit || 'pieces',
+    quantity: Math.max(0, quantity),
+    metadata: metadataMap, // Use the Map
+    reorder_threshold: Math.max(0, reorder_threshold),
+    cost: Math.max(0, cost),
+    price: Math.max(0, price),
+    supplier,
+    image,
+    created_by: req.user?.uuid || null,
+    updated_by: req.user?.uuid || null,
+  });
+
+  await item.save();
+
+  // Log activity
+  await logActivity({
+    user_id: req.user?._id || null,
+    user_name: req.user?.name || 'system',
+    user_role: req.user?.role || 'system',
+    action: 'inventory_created',
+    description: `Inventory item created: ${item.name}`,
+    metadata: {
+      item_id: item.uuid,
+      item_name: item.name,
+      part_number: item.part_number,
+      type: item.type,
+      quantity: item.quantity,
+      created_by: req.user?.email || 'system',
+    },
+    req,
+    status: 'success'
+  });
+
+  return item.toSafeObject();
+}
+
+/**
+ * Update inventory item
+ */
+async updateItem(entityId, uuid, data, req) {
+  const item = await Inventory.findOne({ entity_id: entityId, uuid });
+  if (!item) {
+    throw new Error('INVENTORY_ITEM_NOT_FOUND');
+  }
+
+  const {
+    name,
+    part_number,
+    type,
+    unit,
+    quantity,
+    metadata,
+    reorder_threshold,
+    cost,
+    price,
+    supplier,
+    image,
+  } = data;
+
+  // Check for duplicate part number
+  if (part_number && part_number !== item.part_number) {
+    const existing = await Inventory.findOne({ 
+      entity_id: entityId, 
+      part_number: part_number,
+      uuid: { $ne: uuid }
+    });
+    if (existing) {
+      throw new Error('PART_NUMBER_ALREADY_EXISTS');
+    }
+  }
+
+  // Update fields
+  if (name) item.name = name;
+  if (part_number !== undefined) item.part_number = part_number || undefined;
+  if (type) item.type = type;
+  if (unit) item.unit = unit;
+  if (quantity !== undefined) item.quantity = Math.max(0, quantity);
+  
+  // Handle metadata update with Map
+  if (metadata) {
+    // If it's already a Map, use it directly
+    if (metadata instanceof Map) {
+      item.metadata = metadata;
+    } else if (typeof metadata === 'object') {
+      // Merge with existing metadata
+      const currentMetadata = item.metadata instanceof Map 
+        ? Object.fromEntries(item.metadata) 
+        : item.metadata || {};
+      const mergedMetadata = { ...currentMetadata, ...metadata };
+      item.metadata = new Map(Object.entries(mergedMetadata));
+    }
+  }
+  
+  if (reorder_threshold !== undefined) item.reorder_threshold = Math.max(0, reorder_threshold);
+  if (cost !== undefined) item.cost = Math.max(0, cost);
+  if (price !== undefined) item.price = Math.max(0, price);
+  if (supplier !== undefined) item.supplier = supplier;
+  if (image !== undefined) item.image = image;
+
+  item.updated_by = req.user?.uuid || null;
+  await item.save();
+
+  // Log activity
+  await logActivity({
+    user_id: req.user?._id || null,
+    user_name: req.user?.name || 'system',
+    user_role: req.user?.role || 'system',
+    action: 'inventory_updated',
+    description: `Inventory item updated: ${item.name}`,
+    metadata: {
+      item_id: item.uuid,
+      item_name: item.name,
+      part_number: item.part_number,
+      updated_fields: Object.keys(data),
+      updated_by: req.user?.email || 'system',
+    },
+    req,
+    status: 'success'
+  });
+
+  return item.toSafeObject();
+}
 
   /**
    * Update inventory item
@@ -182,23 +285,23 @@ class InventoryService {
 
     const {
       name,
+      part_number,
       type,
       unit,
       quantity,
-      specs,
+      metadata,
       reorder_threshold,
       cost,
       price,
-      location,
       supplier,
       image,
     } = data;
 
     // Check for duplicate part number
-    if (specs?.part_number && specs.part_number !== item.specs?.part_number) {
+    if (part_number && part_number !== item.part_number) {
       const existing = await Inventory.findOne({ 
         entity_id: entityId, 
-        'specs.part_number': specs.part_number,
+        part_number: part_number,
         uuid: { $ne: uuid }
       });
       if (existing) {
@@ -208,14 +311,18 @@ class InventoryService {
 
     // Update fields
     if (name) item.name = name;
+    if (part_number !== undefined) item.part_number = part_number || undefined;
     if (type) item.type = type;
     if (unit) item.unit = unit;
     if (quantity !== undefined) item.quantity = Math.max(0, quantity);
-    if (specs) item.specs = { ...item.specs, ...specs };
+    if (metadata) {
+      // Merge metadata
+      const currentMetadata = item.metadata || {};
+      item.metadata = { ...currentMetadata, ...metadata };
+    }
     if (reorder_threshold !== undefined) item.reorder_threshold = Math.max(0, reorder_threshold);
     if (cost !== undefined) item.cost = Math.max(0, cost);
     if (price !== undefined) item.price = Math.max(0, price);
-    if (location !== undefined) item.location = location;
     if (supplier !== undefined) item.supplier = supplier;
     if (image !== undefined) item.image = image;
 
@@ -232,6 +339,7 @@ class InventoryService {
       metadata: {
         item_id: item.uuid,
         item_name: item.name,
+        part_number: item.part_number,
         updated_fields: Object.keys(data),
         updated_by: req.user?.email || 'system',
       },
@@ -263,6 +371,7 @@ class InventoryService {
       metadata: {
         item_id: item.uuid,
         item_name: item.name,
+        part_number: item.part_number,
         deleted_by: req.user?.email || 'system',
       },
       req,
@@ -320,6 +429,7 @@ class InventoryService {
       metadata: {
         item_id: item.uuid,
         item_name: item.name,
+        part_number: item.part_number,
         old_quantity: oldQuantity,
         new_quantity: newQuantity,
         adjustment_type: type,
@@ -452,6 +562,35 @@ class InventoryService {
       total: itemsData.length,
       success_count: results.length,
       failure_count: errors.length,
+    };
+  }
+
+  /**
+   * Get items by metadata field
+   */
+  async getItemsByMetadata(entityId, metadataKey, metadataValue, page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    const query = { 
+      entity_id: entityId,
+      [`metadata.${metadataKey}`]: metadataValue 
+    };
+
+    const [items, total] = await Promise.all([
+      Inventory.find(query)
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit),
+      Inventory.countDocuments(query),
+    ]);
+
+    return {
+      items: items.map(i => i.toSafeObject()),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 }

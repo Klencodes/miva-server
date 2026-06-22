@@ -1,50 +1,48 @@
-// services/dashboardService.js
 const Inventory = require('../models/Inventory');
 const Invoice = require('../models/Invoice');
 const { logActivity } = require('../utils/ActivityLogger');
 
 class DashboardService {
   /**
-   * Get dashboard statistics for an entity with optional date range
+   * Build a MongoDB entity match object from an entityId string.
+   * Returns {} when entityId is null (= all entities).
+   */
+  _entityMatch(entityId) {
+    return entityId ? { entity_id: entityId } : {};
+  }
+
+  /**
+   * Get dashboard statistics for an entity or all entities with date range
    */
   async getDashboardStats(entityId, filters = {}, req = null) {
     try {
       const { date_from, date_to } = filters;
 
-      // Build date filter
       const dateFilter = {};
-      if (date_from) {
-        dateFilter.$gte = new Date(date_from);
-      }
-      if (date_to) {
-        dateFilter.$lte = new Date(date_to);
-      }
+      if (date_from) dateFilter.$gte = new Date(date_from);
+      if (date_to)   dateFilter.$lte = new Date(date_to);
 
-      // Get inventory stats (not date dependent)
-      const inventoryStats = await this.getInventoryStats(entityId);
-      
-      // Get invoice stats with date filter
-      const invoiceStats = await this.getInvoiceStats(entityId, dateFilter);
-      
-      // Get recent transactions with date filter
-      const recentTransactions = await this.getRecentTransactions(entityId, 10, dateFilter);
-      
-      // Get weekly sales data with date filter
-      const weeklySales = await this.getWeeklySales(entityId, dateFilter);
-      
-      // Get top selling items with date filter
-      const topSelling = await this.getTopSellingItems(entityId, 5, dateFilter);
-      
-      // Get inventory by type (not date dependent)
-      const inventoryByType = await this.getInventoryByType(entityId);
-      
-      // Get low stock items count (not date dependent)
-      const lowStockCount = await this.getLowStockCount(entityId);
-      
-      // Get invoice status breakdown with date filter
-      const invoiceStatusBreakdown = await this.getInvoiceStatusBreakdown(entityId, dateFilter);
+      // All sub-methods now receive entityId (string|null) consistently
+      const [
+        inventoryStats,
+        invoiceStats,
+        recentTransactions,
+        weeklySales,
+        topSelling,
+        inventoryByType,
+        lowStockCount,
+        invoiceStatusBreakdown,
+      ] = await Promise.all([
+        this.getInventoryStats(entityId, dateFilter),
+        this.getInvoiceStats(entityId, dateFilter),
+        this.getRecentTransactions(entityId, 5, dateFilter),
+        this.getWeeklySales(entityId, dateFilter),
+        this.getTopSellingItems(entityId, 5, dateFilter),
+        this.getInventoryByType(entityId),
+        this.getLowStockCount(entityId),
+        this.getInvoiceStatusBreakdown(entityId, dateFilter),
+      ]);
 
-      // Log dashboard view
       if (req) {
         await logActivity({
           user_id: req.user?._id || null,
@@ -53,14 +51,14 @@ class DashboardService {
           action: 'dashboard_viewed',
           description: 'Dashboard viewed',
           metadata: {
-            entity_id: entityId,
+            entity_id: entityId || 'ALL_ENTITIES',
             total_items: inventoryStats.total_items || 0,
             total_invoices: invoiceStats.total_invoices || 0,
             date_from: date_from || null,
             date_to: date_to || null,
           },
           req,
-          status: 'success'
+          status: 'success',
         });
       }
 
@@ -82,19 +80,22 @@ class DashboardService {
 
   /**
    * Get inventory statistics
+   * No changes needed - still works with new schema
    */
-  async getInventoryStats(entityId) {
+  async getInventoryStats(entityId = null, dateFilter = {}) {
+    const matchQuery = this._entityMatch(entityId);
+
     const stats = await Inventory.aggregate([
-      { $match: { entity_id: entityId } },
+      { $match: matchQuery },
       {
         $group: {
           _id: null,
-          total_items: { $sum: 1 },
+          total_items:    { $sum: 1 },
           total_quantity: { $sum: '$quantity' },
-          total_value: { $sum: { $multiply: ['$quantity', '$cost'] } },
-          total_price: { $sum: { $multiply: ['$quantity', '$price'] } },
-          avg_cost: { $avg: '$cost' },
-          avg_price: { $avg: '$price' },
+          total_value:    { $sum: { $multiply: ['$quantity', '$cost'] } },
+          total_price:    { $sum: { $multiply: ['$quantity', '$price'] } },
+          avg_cost:       { $avg: '$cost' },
+          avg_price:      { $avg: '$price' },
         },
       },
     ]);
@@ -110,10 +111,10 @@ class DashboardService {
   }
 
   /**
-   * Get invoice statistics with optional date filter
+   * Get invoice statistics
    */
-  async getInvoiceStats(entityId, dateFilter = {}) {
-    const matchQuery = { entity_id: entityId };
+  async getInvoiceStats(entityId = null, dateFilter = {}) {
+    const matchQuery = this._entityMatch(entityId);
     if (Object.keys(dateFilter).length > 0) {
       matchQuery.created_at = dateFilter;
     }
@@ -123,9 +124,9 @@ class DashboardService {
       {
         $group: {
           _id: null,
-          total_invoices: { $sum: 1 },
-          total_amount: { $sum: '$total' },
-          total_paid: { $sum: '$amount_paid' },
+          total_invoices:  { $sum: 1 },
+          total_amount:    { $sum: '$total' },
+          total_paid:      { $sum: '$amount_paid' },
           total_remaining: { $sum: { $subtract: ['$total', '$amount_paid'] } },
         },
       },
@@ -140,10 +141,10 @@ class DashboardService {
   }
 
   /**
-   * Get invoice status breakdown with optional date filter
+   * Get invoice status breakdown
    */
-  async getInvoiceStatusBreakdown(entityId, dateFilter = {}) {
-    const matchQuery = { entity_id: entityId };
+  async getInvoiceStatusBreakdown(entityId = null, dateFilter = {}) {
+    const matchQuery = this._entityMatch(entityId);
     if (Object.keys(dateFilter).length > 0) {
       matchQuery.created_at = dateFilter;
     }
@@ -152,27 +153,27 @@ class DashboardService {
       { $match: matchQuery },
       {
         $group: {
-          _id: '$status',
-          count: { $sum: 1 },
+          _id:    '$status',
+          count:  { $sum: 1 },
           amount: { $sum: '$total' },
         },
       },
     ]);
 
     const result = {
-      draft: { count: 0, amount: 0 },
-      quoted: { count: 0, amount: 0 },
-      invoiced: { count: 0, amount: 0 },
-      partially_paid: { count: 0, amount: 0 },
-      paid: { count: 0, amount: 0 },
-      cancelled: { count: 0, amount: 0 },
-      overdue: { count: 0, amount: 0 },
+      draft:           { count: 0, amount: 0 },
+      quoted:          { count: 0, amount: 0 },
+      invoiced:        { count: 0, amount: 0 },
+      partially:       { count: 0, amount: 0 },
+      paid:            { count: 0, amount: 0 },
+      cancelled:       { count: 0, amount: 0 },
+      overdue:         { count: 0, amount: 0 },
     };
 
     breakdown.forEach(item => {
-      if (result[item._id]) {
+      if (result[item._id] !== undefined) {
         result[item._id] = {
-          count: item.count,
+          count:  item.count,
           amount: item.amount || 0,
         };
       }
@@ -182,33 +183,33 @@ class DashboardService {
   }
 
   /**
-   * Get recent transactions with optional date filter
+   * Get recent transactions
    */
-  async getRecentTransactions(entityId, limit = 10, dateFilter = {}) {
-    const invoiceQuery = { entity_id: entityId };
+  async getRecentTransactions(entityId = null, limit = 10, dateFilter = {}) {
+    const matchQuery = this._entityMatch(entityId);
     if (Object.keys(dateFilter).length > 0) {
-      invoiceQuery.created_at = dateFilter;
+      matchQuery.created_at = dateFilter;
     }
 
-    // Get recent invoices
-    const invoices = await Invoice.find(invoiceQuery)
+    const invoices = await Invoice.find(matchQuery)
       .sort({ created_at: -1 })
       .limit(limit)
       .select('uuid number customer total status created_at');
 
-    // Transform invoices to transactions
     const transactions = invoices.map(inv => ({
-      id: inv.uuid,
-      type: 'invoice',
-      description: `Invoice ${inv.number} - ${inv.customer.name}`,
-      amount: inv.total,
-      date: inv.created_at,
-      status: inv.status,
-      reference: inv.number,
+      id:          inv.uuid,
+      type:        'invoice',
+      description: `Invoice ${inv.number} - ${inv.customer?.name || 'Unknown Customer'}`,
+      amount:      inv.total,
+      date:        inv.created_at,
+      status:      inv.status,
+      reference:   inv.number,
     }));
 
-    // Add payment transactions (from invoices with payments)
-    const paymentQuery = { entity_id: entityId, 'payments.0': { $exists: true } };
+    const paymentQuery = {
+      ...this._entityMatch(entityId),
+      'payments.0': { $exists: true },
+    };
     if (Object.keys(dateFilter).length > 0) {
       paymentQuery.created_at = dateFilter;
     }
@@ -219,42 +220,39 @@ class DashboardService {
       .select('uuid number customer payments created_at');
 
     invoicesWithPayments.forEach(inv => {
-      inv.payments.forEach(payment => {
+      inv.payments?.forEach(payment => {
         const paymentDate = payment.date || inv.created_at;
-        // Only include if within date range
         let include = true;
         if (dateFilter.$gte && new Date(paymentDate) < dateFilter.$gte) include = false;
         if (dateFilter.$lte && new Date(paymentDate) > dateFilter.$lte) include = false;
-        
+
         if (include) {
           transactions.push({
-            id: payment.payment_id || `pay-${Date.now()}`,
-            type: 'payment',
-            description: `Payment for ${inv.number} - ${inv.customer.name}`,
-            amount: payment.amount,
-            date: paymentDate,
-            status: 'completed',
-            reference: payment.reference || '',
+            id:          payment.payment_id || `pay-${Date.now()}`,
+            type:        'payment',
+            description: `Payment for ${inv.number} - ${inv.customer?.name || 'Unknown Customer'}`,
+            amount:      payment.amount,
+            date:        paymentDate,
+            status:      'completed',
+            reference:   payment.reference || '',
           });
         }
       });
     });
 
-    // Sort by date and limit
     return transactions
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, limit);
   }
 
   /**
-   * Get weekly sales data with optional date filter
+   * Get weekly sales data
    */
-  async getWeeklySales(entityId, dateFilter = {}) {
+  async getWeeklySales(entityId = null, dateFilter = {}) {
     const matchQuery = {
-      entity_id: entityId,
-      status: { $in: ['invoiced', 'partially_paid', 'paid'] },
+      ...this._entityMatch(entityId),
+      status: { $in: ['invoiced', 'partially', 'paid'] },
     };
-    
     if (Object.keys(dateFilter).length > 0) {
       matchQuery.created_at = dateFilter;
     }
@@ -264,46 +262,37 @@ class DashboardService {
       {
         $group: {
           _id: {
-            day: { $dayOfWeek: '$created_at' },
+            day:  { $dayOfWeek: '$created_at' },
             week: { $week: '$created_at' },
             year: { $year: '$created_at' },
           },
           amount: { $sum: '$total' },
-          count: { $sum: 1 },
+          count:  { $sum: 1 },
         },
       },
-      {
-        $sort: { '_id.year': 1, '_id.week': 1, '_id.day': 1 },
-      },
+      { $sort: { '_id.year': 1, '_id.week': 1, '_id.day': 1 } },
     ]);
 
-    // Map to day names
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const result = [];
-    
-    // Get the date range to use
+
     let today = new Date();
-    if (dateFilter.$lte) {
-      today = new Date(dateFilter.$lte);
-    }
-    
-    // Create array of last 7 days
+    if (dateFilter.$lte) today = new Date(dateFilter.$lte);
+
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dayName = dayNames[date.getDay()];
-      
-      // Find matching sales data
-      const daySales = sales.find(s => {
-        // Map day of week (1 = Sunday, 7 = Saturday)
-        const dayOfWeek = date.getDay() === 0 ? 7 : date.getDay();
-        return s._id && s._id.day === dayOfWeek;
-      });
+
+      // MongoDB $dayOfWeek: 1=Sun … 7=Sat
+      const mongoDayOfWeek = date.getDay() + 1;
+
+      const daySales = sales.find(s => s._id.day === mongoDayOfWeek);
 
       result.push({
-        day: dayName,
+        day:    dayName,
         amount: daySales?.amount || 0,
-        count: daySales?.count || 0,
+        count:  daySales?.count  || 0,
       });
     }
 
@@ -311,10 +300,10 @@ class DashboardService {
   }
 
   /**
-   * Get top selling items with optional date filter
+   * Get top selling items
    */
-  async getTopSellingItems(entityId, limit = 5, dateFilter = {}) {
-    const matchQuery = { entity_id: entityId };
+  async getTopSellingItems(entityId = null, limit = 5, dateFilter = {}) {
+    const matchQuery = this._entityMatch(entityId);
     if (Object.keys(dateFilter).length > 0) {
       matchQuery.created_at = dateFilter;
     }
@@ -324,10 +313,10 @@ class DashboardService {
       { $unwind: '$items' },
       {
         $group: {
-          _id: '$items.id',
-          name: { $first: '$items.name' },
+          _id:      '$items.id',
+          name:     { $first: '$items.name' },
           quantity: { $sum: '$items.quantity' },
-          revenue: { $sum: { $multiply: ['$items.quantity', '$items.price'] } },
+          revenue:  { $sum: { $multiply: ['$items.quantity', '$items.price'] } },
         },
       },
       { $sort: { revenue: -1 } },
@@ -335,78 +324,82 @@ class DashboardService {
     ]);
 
     return items.map(item => ({
-      id: item._id,
-      name: item.name || 'Unknown Item',
+      id:       item._id,
+      name:     item.name     || 'Unknown Item',
       quantity: item.quantity || 0,
-      revenue: item.revenue || 0,
+      revenue:  item.revenue  || 0,
     }));
   }
 
   /**
    * Get inventory by type
    */
-  async getInventoryByType(entityId) {
+  async getInventoryByType(entityId = null) {
+    const matchQuery = this._entityMatch(entityId);
+
     const types = await Inventory.aggregate([
-      { $match: { entity_id: entityId } },
+      { $match: matchQuery },
       {
         $group: {
-          _id: '$type',
-          count: { $sum: 1 },
+          _id:      '$type',
+          count:    { $sum: 1 },
           quantity: { $sum: '$quantity' },
-          value: { $sum: { $multiply: ['$quantity', '$cost'] } },
+          value:    { $sum: { $multiply: ['$quantity', '$cost'] } },
         },
       },
     ]);
 
     return types.map(item => ({
-      name: item._id.charAt(0).toUpperCase() + item._id.slice(1),
-      count: item.count || 0,
+      name:     item._id ? item._id.charAt(0).toUpperCase() + item._id.slice(1) : 'Unknown',
+      count:    item.count    || 0,
       quantity: item.quantity || 0,
-      value: item.value || 0,
+      value:    item.value    || 0,
     }));
   }
 
   /**
    * Get low stock items count
    */
-  async getLowStockCount(entityId) {
-    const count = await Inventory.countDocuments({
-      entity_id: entityId,
-      $expr: { $lte: ['$quantity', '$reorder_threshold'] },
-      quantity: { $gt: 0 },
-    });
+  async getLowStockCount(entityId = null) {
+    const matchQuery = this._entityMatch(entityId);
 
-    const outOfStock = await Inventory.countDocuments({
-      entity_id: entityId,
-      quantity: 0,
-    });
+    const [low_stock, out_of_stock] = await Promise.all([
+      Inventory.countDocuments({
+        ...matchQuery,
+        $expr: { $lte: ['$quantity', '$reorder_threshold'] },
+        quantity: { $gt: 0 },
+      }),
+      Inventory.countDocuments({
+        ...matchQuery,
+        quantity: 0,
+      }),
+    ]);
 
     return {
-      low_stock: count,
-      out_of_stock: outOfStock,
-      total: count + outOfStock,
+      low_stock,
+      out_of_stock,
+      total: low_stock + out_of_stock,
     };
   }
 
   /**
-   * Get monthly revenue trend with optional date filter
+   * Get monthly revenue trend
    */
-  async getMonthlyRevenue(entityId, months = 12, dateFilter = {}) {
-    let startDate = new Date();
+  async getMonthlyRevenue(entityId = null, months = 12, dateFilter = {}) {
+    const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - months);
 
     const matchQuery = {
-      entity_id: entityId,
+      ...this._entityMatch(entityId),
       created_at: { $gte: startDate },
-      status: { $in: ['invoiced', 'partially_paid', 'paid'] },
+      status: { $in: ['invoiced', 'partially', 'paid'] },
     };
 
     if (Object.keys(dateFilter).length > 0) {
       if (dateFilter.$gte) {
-        matchQuery.created_at.$gte = new Date(Math.max(
-          new Date(dateFilter.$gte).getTime(),
-          new Date(matchQuery.created_at.$gte).getTime()
-        ));
+        matchQuery.created_at.$gte = new Date(
+          Math.max(new Date(dateFilter.$gte).getTime(), startDate.getTime())
+        );
       }
       if (dateFilter.$lte) {
         matchQuery.created_at.$lte = dateFilter.$lte;
@@ -418,32 +411,30 @@ class DashboardService {
       {
         $group: {
           _id: {
-            year: { $year: '$created_at' },
+            year:  { $year: '$created_at' },
             month: { $month: '$created_at' },
           },
           amount: { $sum: '$total' },
-          count: { $sum: 1 },
+          count:  { $sum: 1 },
         },
       },
-      {
-        $sort: { '_id.year': 1, '_id.month': 1 },
-      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]);
 
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
+    const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
     return revenue.map(item => ({
-      month: `${monthNames[item._id.month - 1]} ${item._id.year}`,
+      month:  `${monthNames[item._id.month - 1]} ${item._id.year}`,
       amount: item.amount || 0,
-      count: item.count || 0,
+      count:  item.count  || 0,
     }));
   }
 
   /**
-   * Get customer statistics with optional date filter
+   * Get customer statistics
    */
-  async getCustomerStats(entityId, dateFilter = {}) {
-    const matchQuery = { entity_id: entityId };
+  async getCustomerStats(entityId = null, dateFilter = {}) {
+    const matchQuery = this._entityMatch(entityId);
     if (Object.keys(dateFilter).length > 0) {
       matchQuery.created_at = dateFilter;
     }
@@ -452,10 +443,10 @@ class DashboardService {
       { $match: matchQuery },
       {
         $group: {
-          _id: '$customer.name',
-          total_spent: { $sum: '$total' },
+          _id:           '$customer.name',
+          total_spent:   { $sum: '$total' },
           invoice_count: { $sum: 1 },
-          last_invoice: { $max: '$created_at' },
+          last_invoice:  { $max: '$created_at' },
         },
       },
       { $sort: { total_spent: -1 } },
@@ -463,12 +454,13 @@ class DashboardService {
     ]);
 
     return stats.map(item => ({
-      name: item._id,
-      total_spent: item.total_spent || 0,
+      name:          item._id || 'Unknown Customer',
+      total_spent:   item.total_spent   || 0,
       invoice_count: item.invoice_count || 0,
-      last_invoice: item.last_invoice,
+      last_invoice:  item.last_invoice,
     }));
   }
+
 }
 
 module.exports = new DashboardService();

@@ -83,7 +83,6 @@ class EntityController {
   createEntity = async (req, res) => {
     try {
       const entityData = req.body;
-
       const entity = await EntityService.createEntity(entityData, req);
 
       return res.json({
@@ -286,9 +285,20 @@ class EntityController {
       },
     };
 
+    // Check for MongoDB duplicate key error
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(409).json({
+        message: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`,
+        code: "DUPLICATE_ENTRY",
+        success: false,
+        field,
+      });
+    }
+
     const errorConfig = errorMap[error.message] || {
       status: 500,
-      message: "Internal server error",
+      message: error.message || "Internal server error",
       code: "SERVER_ERROR",
     };
 

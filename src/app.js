@@ -11,6 +11,8 @@ const entityRoutes = require('./routes/Entity');
 const inventoryRoutes = require('./routes/Inventory');
 const invoiceRoutes = require('./routes/Invoice');
 const userRoutes = require('./routes/User');
+const dashboardRoutes = require('./routes/Dashboard');
+const customerRoutes = require('./routes/Customer');
 
 // Import database connection
 const connectDB = require('./config/db');
@@ -28,9 +30,9 @@ app.use(cors({
     'http://localhost:4000',
     'http://localhost:5000'
   ],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Entity', 'X-Requested-With'], 
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 app.use(express.json());
@@ -62,6 +64,8 @@ app.use('/api/entities', entityRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/customers', customerRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

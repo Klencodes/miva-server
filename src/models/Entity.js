@@ -15,10 +15,10 @@ const EntitySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-     branch: {
+    branch: {
       type: String,
-      required: false,
       trim: true,
+      default: "Head Quarters",
     },
     email: {
       type: String,
@@ -59,20 +59,23 @@ const EntitySchema = new mongoose.Schema(
     registration_number: {
       type: String,
       trim: true,
+      unique: false,
+      sparse: true,
     },
     tax_id: {
       type: String,
       trim: true,
+      unique: false,
+      sparse: true,
     },
-   
+    currency: {
+      type: String,
+      default: "GHS",
+      trim: true,
+    },
     is_active: {
       type: Boolean,
       default: true,
-    },
-    settings: {
-      type: Map,
-      of: mongoose.Schema.Types.Mixed,
-      default: {},
     },
     metadata: {
       type: Map,
@@ -80,10 +83,10 @@ const EntitySchema = new mongoose.Schema(
       default: {},
     },
     created_by: {
-      type: String, // UUID of user who created this entity
+      type: String,
     },
     updated_by: {
-      type: String, // UUID of user who last updated this entity
+      type: String,
     },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } },
@@ -94,6 +97,7 @@ EntitySchema.index({ uuid: 1 });
 EntitySchema.index({ email: 1 });
 EntitySchema.index({ name: 1 });
 EntitySchema.index({ registration_number: 1 });
+EntitySchema.index({ tax_id: 1 });
 
 // Methods
 EntitySchema.methods.toSafeObject = function () {

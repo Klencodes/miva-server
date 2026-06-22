@@ -99,11 +99,23 @@ const InvoiceSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
+    nhil_rate: {
+      type: Number,
+      default: 0,
+    },
     getfund: {
       type: Number,
       default: 0,
     },
+    getfund_rate: {
+      type: Number,
+      default: 0,
+    },
     covid_levy: {
+      type: Number,
+      default: 0,
+    },
+    covid_levy_rate: {
       type: Number,
       default: 0,
     },
@@ -116,11 +128,15 @@ const InvoiceSchema = new mongoose.Schema(
       type: Number,
       default: 0,
     },
-    // REMOVED: remaining_balance from schema (now a virtual)
     status: {
       type: String,
-      enum: ['draft', 'quoted', 'invoiced', 'partially_paid', 'paid', 'cancelled', 'overdue'],
+      enum: ['draft', 'quoted', 'invoiced', 'cancelled'],
       default: 'draft',
+    },
+    payment_status: {
+      type: String,
+      enum: ['unpaid', 'paid', 'overdue', 'partially'],
+      default: 'unpaid',
     },
     notes: {
       type: String,
@@ -161,27 +177,25 @@ const InvoiceSchema = new mongoose.Schema(
   }
 );
 
-// Virtual for remaining balance - FIXED: removed from schema, now only virtual
+// Virtual for remaining balance
 InvoiceSchema.virtual('remaining_balance').get(function() {
   return this.total - (this.amount_paid || 0);
 });
 
-// Virtual for payment status
-InvoiceSchema.virtual('payment_status').get(function() {
-  const remaining = this.remaining_balance;
-  if (remaining <= 0) return 'Paid';
-  if (this.amount_paid > 0) return 'Partial';
-  return 'Unpaid';
+// Virtual for payment status (computed from payment_status field)
+InvoiceSchema.virtual('payment_status_display').get(function() {
+  return this.payment_status || 'unpaid';
 });
 
 // Indexes
 InvoiceSchema.index({ entity_id: 1, number: 1 });
 InvoiceSchema.index({ entity_id: 1, status: 1 });
+InvoiceSchema.index({ entity_id: 1, payment_status: 1 });
 InvoiceSchema.index({ entity_id: 1, date: -1 });
 InvoiceSchema.index({ 'customer.email': 1 });
 InvoiceSchema.index({ 'customer.phone': 1 });
 
-// Pre-save middleware to calculate totals
+// Pre-save middleware to calculate totals and update statuses
 InvoiceSchema.pre('save', function(next) {
   // Calculate subtotal
   this.subtotal = this.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -196,27 +210,83 @@ InvoiceSchema.pre('save', function(next) {
   // Calculate taxes (based on subtotal after discount)
   const taxableAmount = this.subtotal - this.discount_total;
   this.vat = (taxableAmount * (this.vat_rate || 0)) / 100;
-  this.nhil = (taxableAmount * 0.025); // 2.5% NHIL
-  this.getfund = (taxableAmount * 0.025); // 2.5% GETFund
-  this.covid_levy = (taxableAmount * 0.01); // 1% COVID-19 Levy
+  this.nhil = (taxableAmount * (this.nhil_rate || 0)) / 100;
+  this.getfund = (taxableAmount * (this.getfund_rate || 0)) / 100;
+  this.covid_levy = (taxableAmount * (this.covid_levy_rate || 0)) / 100;
   
   // Calculate total
   this.total = taxableAmount + this.vat + this.nhil + this.getfund + this.covid_levy;
   
-  // Update status based on payment (using virtual)
-  const remaining = this.total - (this.amount_paid || 0);
-  if (this.status !== 'cancelled' && this.status !== 'draft') {
-    if (remaining <= 0) {
-      this.status = 'paid';
-    } else if (this.amount_paid > 0) {
-      this.status = 'partially_paid';
-    } else if (this.due_date && new Date() > this.due_date) {
-      this.status = 'overdue';
-    }
-  }
+  // Update payment_status based on payment
+  this.updatePaymentStatus();
+  
+  // Update status based on invoice state
+  this.updateInvoiceStatus();
   
   next();
 });
+
+// Method to update payment status
+InvoiceSchema.methods.updatePaymentStatus = function() {
+  const remaining = this.total - (this.amount_paid || 0);
+  const now = new Date();
+  const dueDate = this.due_date ? new Date(this.due_date) : null;
+  
+  // Don't update payment status for draft or cancelled
+  if (this.status === 'draft' || this.status === 'cancelled') {
+    this.payment_status = 'unpaid';
+    return;
+  }
+  
+  // Check if fully paid
+  if (remaining <= 0) {
+    this.payment_status = 'paid';
+    return;
+  }
+  
+  // Check if partially paid
+  if (this.amount_paid > 0 && remaining > 0) {
+    this.payment_status = 'partially';
+    return;
+  }
+  
+  // Check if overdue (no payment and past due date)
+  if (this.amount_paid === 0 && dueDate && now > dueDate) {
+    this.payment_status = 'overdue';
+    return;
+  }
+  
+  // Default: unpaid
+  this.payment_status = 'unpaid';
+};
+
+// Method to update invoice status
+InvoiceSchema.methods.updateInvoiceStatus = function() {
+  // Don't override draft or cancelled status
+  if (this.status === 'draft' || this.status === 'cancelled') {
+    return;
+  }
+  
+  // If quoted, keep as quoted unless paid
+  if (this.status === 'quoted') {
+    if (this.payment_status === 'paid') {
+      this.status = 'invoiced';
+    }
+    return;
+  }
+  
+  // For invoiced status
+  if (this.status === 'invoiced') {
+    // If fully paid, keep as invoiced (payment_status handles the rest)
+    // No need to change status
+    return;
+  }
+  
+  // Default to invoiced if not draft, quoted, or cancelled
+  if (!this.status || this.status === '') {
+    this.status = 'invoiced';
+  }
+};
 
 // Methods
 InvoiceSchema.methods.toSafeObject = function() {
@@ -228,19 +298,27 @@ InvoiceSchema.methods.toSafeObject = function() {
 InvoiceSchema.methods.addPayment = function(paymentData) {
   this.payments.push(paymentData);
   this.amount_paid = (this.amount_paid || 0) + paymentData.amount;
-  // Remaining balance is now a virtual, no need to set it
+  
+  // Update statuses
+  this.updatePaymentStatus();
+  this.updateInvoiceStatus();
+  
   return this;
 };
 
 InvoiceSchema.methods.cancel = function() {
   this.status = 'cancelled';
+  this.payment_status = 'unpaid';
   return this;
 };
 
 InvoiceSchema.methods.markAsPaid = function() {
   this.amount_paid = this.total;
-  // Remaining balance is now a virtual
-  this.status = 'paid';
+  this.payment_status = 'paid';
+  // Keep status as invoiced
+  if (this.status !== 'draft' && this.status !== 'quoted') {
+    this.status = 'invoiced';
+  }
   return this;
 };
 
