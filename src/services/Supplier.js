@@ -5,9 +5,9 @@ class SupplierService {
   /**
    * Get all suppliers with pagination and filtering
    */
-  async getSuppliers(entityId, filters = {}, page = 1, limit = 10) {
+  async getSuppliers(filters = {}, page = 1, limit = 10) {
     const skip = (page - 1) * limit;
-    const query = { entity_id: entityId };
+    const query = {};
 
     if (filters.search) {
       query.$or = [
@@ -62,8 +62,8 @@ class SupplierService {
   /**
    * Get supplier by UUID
    */
-  async getSupplierByUuid(entityId, uuid) {
-    const supplier = await Supplier.findOne({ entity_id: entityId, uuid });
+  async getSupplierByUuid(uuid) {
+    const supplier = await Supplier.findOne({ uuid });
     if (!supplier) {
       throw new Error('SUPPLIER_NOT_FOUND');
     }
@@ -73,9 +73,8 @@ class SupplierService {
   /**
    * Get supplier by email
    */
-  async getSupplierByEmail(entityId, email) {
+  async getSupplierByEmail(email) {
     const supplier = await Supplier.findOne({ 
-      entity_id: entityId, 
       email: email.toLowerCase() 
     });
     return supplier ? supplier.toSafeObject() : null;
@@ -84,7 +83,7 @@ class SupplierService {
   /**
    * Create a new supplier
    */
-  async createSupplier(entityId, data, req) {
+  async createSupplier(data, req) {
     const {
       name,
       email,
@@ -111,7 +110,6 @@ class SupplierService {
     if (!address) throw new Error('ADDRESS_REQUIRED');
 
     const existingEmail = await Supplier.findOne({ 
-      entity_id: entityId, 
       email: email.toLowerCase() 
     });
     if (existingEmail) {
@@ -120,7 +118,6 @@ class SupplierService {
 
     if (tax_id) {
       const existingTax = await Supplier.findOne({ 
-        entity_id: entityId, 
         tax_id: tax_id 
       });
       if (existingTax) {
@@ -130,7 +127,6 @@ class SupplierService {
 
     if (registration_number) {
       const existingReg = await Supplier.findOne({ 
-        entity_id: entityId, 
         registration_number: registration_number 
       });
       if (existingReg) {
@@ -139,7 +135,6 @@ class SupplierService {
     }
 
     const supplier = new Supplier({
-      entity_id: entityId,
       name,
       email: email.toLowerCase(),
       phone_code: phone_code || '+233',
@@ -185,8 +180,8 @@ class SupplierService {
   /**
    * Update a supplier
    */
-  async updateSupplier(entityId, uuid, data, req) {
-    const supplier = await Supplier.findOne({ entity_id: entityId, uuid });
+  async updateSupplier(uuid, data, req) {
+    const supplier = await Supplier.findOne({ uuid });
     if (!supplier) {
       throw new Error('SUPPLIER_NOT_FOUND');
     }
@@ -213,7 +208,6 @@ class SupplierService {
 
     if (email && email.toLowerCase() !== supplier.email) {
       const existingEmail = await Supplier.findOne({ 
-        entity_id: entityId, 
         email: email.toLowerCase(),
         uuid: { $ne: uuid }
       });
@@ -225,7 +219,6 @@ class SupplierService {
 
     if (tax_id && tax_id !== supplier.tax_id) {
       const existingTax = await Supplier.findOne({ 
-        entity_id: entityId, 
         tax_id: tax_id,
         uuid: { $ne: uuid }
       });
@@ -237,7 +230,6 @@ class SupplierService {
 
     if (registration_number && registration_number !== supplier.registration_number) {
       const existingReg = await Supplier.findOne({ 
-        entity_id: entityId, 
         registration_number: registration_number,
         uuid: { $ne: uuid }
       });
@@ -289,8 +281,8 @@ class SupplierService {
   /**
    * Delete a supplier
    */
-  async deleteSupplier(entityId, uuid, req) {
-    const supplier = await Supplier.findOne({ entity_id: entityId, uuid });
+  async deleteSupplier(uuid, req) {
+    const supplier = await Supplier.findOne({ uuid });
     if (!supplier) {
       throw new Error('SUPPLIER_NOT_FOUND');
     }
@@ -318,8 +310,21 @@ class SupplierService {
   /**
    * Get supplier statistics
    */
-  async getSupplierStats(entityId) {
-    const stats = await Supplier.getStats(entityId);
+  async getSupplierStats() {
+    const stats = await Supplier.aggregate([
+      {
+        $group: {
+          _id: null,
+          total_suppliers: { $sum: 1 },
+          active_suppliers: {
+            $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] }
+          },
+          inactive_suppliers: {
+            $sum: { $cond: [{ $eq: ['$status', 'inactive'] }, 1, 0] }
+          },
+        },
+      },
+    ]);
     
     const result = stats[0] || {
       total_suppliers: 0,
@@ -333,13 +338,13 @@ class SupplierService {
   /**
    * Bulk import suppliers
    */
-  async bulkImportSuppliers(entityId, suppliersData, req) {
+  async bulkImportSuppliers(suppliersData, req) {
     const results = [];
     const errors = [];
 
     for (const data of suppliersData) {
       try {
-        const supplier = await this.createSupplier(entityId, data, req);
+        const supplier = await this.createSupplier(data, req);
         results.push(supplier);
       } catch (error) {
         errors.push({
@@ -355,6 +360,46 @@ class SupplierService {
       total: suppliersData.length,
       success_count: results.length,
       failure_count: errors.length,
+    };
+  }
+
+  /**
+   * Search suppliers by metadata
+   */
+  async searchSuppliersByMetadata(metadataKey, metadataValue) {
+    const query = {
+      [`metadata.${metadataKey}`]: metadataValue,
+    };
+
+    const suppliers = await Supplier.find(query)
+      .sort({ created_at: -1 });
+
+    return suppliers.map(s => s.toSafeObject());
+  }
+
+  /**
+   * Get suppliers by status
+   */
+  async getSuppliersByStatus(status, page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    const query = { status };
+
+    const [suppliers, total] = await Promise.all([
+      Supplier.find(query)
+        .sort({ created_at: -1 })
+        .skip(skip)
+        .limit(limit),
+      Supplier.countDocuments(query),
+    ]);
+
+    return {
+      suppliers: suppliers.map(s => s.toSafeObject()),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 }

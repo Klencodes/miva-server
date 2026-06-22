@@ -9,11 +9,6 @@ const SupplierSchema = new mongoose.Schema(
       default: uuidv4,
       immutable: true,
     },
-    entity_id: {
-      type: String,
-      required: true,
-      index: true,
-    },
     name: {
       type: String,
       required: true,

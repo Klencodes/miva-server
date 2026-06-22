@@ -1,13 +1,11 @@
-const SupplierService = require('../services/supplierService');
-const { BaseController } = require('./baseController');
+const SupplierService = require('../services/Supplier');
 
-class SupplierController extends BaseController {
+class SupplierController {
   /**
    * Get all suppliers
    */
   async getSuppliers(req, res) {
     try {
-      const { entity_id } = req;
       const {
         page = 1,
         limit = 10,
@@ -22,7 +20,6 @@ class SupplierController extends BaseController {
       const filters = { search, status, city, country, sort_by, sort_order };
 
       const result = await SupplierService.getSuppliers(
-        entity_id,
         filters,
         parseInt(page),
         parseInt(limit)
@@ -44,16 +41,15 @@ class SupplierController extends BaseController {
    */
   async getSupplierByUuid(req, res) {
     try {
-      const { entity_id } = req;
       const { uuid } = req.params;
 
-      const supplier = await SupplierService.getSupplierByUuid(entity_id, uuid);
+      const supplier = await SupplierService.getSupplierByUuid(uuid);
 
       return res.json({
         message: 'Supplier retrieved successfully',
         code: 'SUPPLIER_FETCH_SUCCESS',
         success: true,
-        results: { supplier },
+        results: supplier,
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -65,16 +61,15 @@ class SupplierController extends BaseController {
    */
   async createSupplier(req, res) {
     try {
-      const { entity_id } = req;
       const data = req.body;
 
-      const supplier = await SupplierService.createSupplier(entity_id, data, req);
+      const supplier = await SupplierService.createSupplier( data, req);
 
       return res.json({
         message: 'Supplier created successfully',
         code: 'SUPPLIER_CREATED',
         success: true,
-        results: { supplier },
+        results: supplier,
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -86,17 +81,16 @@ class SupplierController extends BaseController {
    */
   async updateSupplier(req, res) {
     try {
-      const { entity_id } = req;
       const { uuid } = req.params;
       const data = req.body;
 
-      const supplier = await SupplierService.updateSupplier(entity_id, uuid, data, req);
+      const supplier = await SupplierService.updateSupplier(uuid, data, req);
 
       return res.json({
         message: 'Supplier updated successfully',
         code: 'SUPPLIER_UPDATED',
         success: true,
-        results: { supplier },
+        results: supplier,
       });
     } catch (error) {
       return this.handleError(error, res);
@@ -108,10 +102,9 @@ class SupplierController extends BaseController {
    */
   async deleteSupplier(req, res) {
     try {
-      const { entity_id } = req;
       const { uuid } = req.params;
 
-      const result = await SupplierService.deleteSupplier(entity_id, uuid, req);
+      const result = await SupplierService.deleteSupplier(uuid, req);
 
       return res.json({
         message: 'Supplier deleted successfully',
@@ -129,9 +122,7 @@ class SupplierController extends BaseController {
    */
   async getSupplierStats(req, res) {
     try {
-      const { entity_id } = req;
-
-      const stats = await SupplierService.getSupplierStats(entity_id);
+      const stats = await SupplierService.getSupplierStats();
 
       return res.json({
         message: 'Supplier statistics retrieved successfully',
@@ -149,7 +140,6 @@ class SupplierController extends BaseController {
    */
   async bulkImportSuppliers(req, res) {
     try {
-      const { entity_id } = req;
       const { suppliers } = req.body;
 
       if (!suppliers || !Array.isArray(suppliers) || suppliers.length === 0) {
@@ -160,7 +150,7 @@ class SupplierController extends BaseController {
         });
       }
 
-      const result = await SupplierService.bulkImportSuppliers(entity_id, suppliers, req);
+      const result = await SupplierService.bulkImportSuppliers(suppliers, req);
 
       return res.json({
         message: 'Suppliers imported successfully',
@@ -174,7 +164,6 @@ class SupplierController extends BaseController {
   }
 
   handleError(error, res) {
-    console.error('Error:', error);
 
     const errorMap = {
       SUPPLIER_NOT_FOUND: { status: 404, message: 'Supplier not found' },

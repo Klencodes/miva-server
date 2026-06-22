@@ -13,6 +13,7 @@ const invoiceRoutes = require('./routes/Invoice');
 const userRoutes = require('./routes/User');
 const dashboardRoutes = require('./routes/Dashboard');
 const customerRoutes = require('./routes/Customer');
+const supplierRoutes = require('./routes/Supplier');
 
 // Import database connection
 const connectDB = require('./config/db');
@@ -66,6 +67,7 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/suppliers', supplierRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
