@@ -55,6 +55,8 @@ class AuthService {
 
     // Create admin user with all permissions
     const admin = new User({
+      first_name,
+      last_name,
       name: `${first_name} ${last_name}`,
       email: email.toLowerCase(),
       password,
@@ -74,6 +76,7 @@ class AuthService {
         can_view_activity_logs: true,
       },
       is_active: true,
+      verified: true,
     });
 
     await admin.save();
@@ -106,7 +109,6 @@ class AuthService {
   /**
    * Login user
    */
-  // services/authService.js
   login = async (email, password, req) => {
     // Validate input
     if (!email || !password) {
@@ -171,7 +173,7 @@ class AuthService {
     user.last_login = new Date();
     await user.save({ validateBeforeSave: false });
 
-    // Generate JWT token
+    // Generate JWT token with entities
     const token = this.generateToken(user);
 
     // Log successful login
@@ -189,40 +191,42 @@ class AuthService {
     // Get sanitized user data with entity information
     const sanitizedUser = this.sanitizeUser(user);
 
-    // Determine if user has entities
-    const hasEntities = user.entities && user.entities.length > 0;
-    const entityCount = user.entities ? user.entities.length : 0;
-
-    // Get entity IDs for frontend
-    const entityIds = user.entities
-      ? user.entities.map((e) => e.entity_id)
-      : [];
+    // Extract entity information
+    const userEntities = user.entities || [];
+    const entityIds = userEntities.map((e) => e.entity_id);
+    const hasEntities = userEntities.length > 0;
+    const primaryEntityId = user.primary_entity_id || 
+      (hasEntities ? userEntities[0].entity_id : null);
 
     // Determine redirect path based on role and entities
     let redirectPath = "/dashboard";
 
-    if (user.role === "super_admin") {
+    if (user.role === "super_admin" || user.role === "admin") {
       redirectPath = "/dashboard";
-    } else if (user.role === "admin") {
-      redirectPath = hasEntities ? "/dashboard" : "/account/create-organisation";
     } else {
       // Regular user (sales, viewer, technician, etc.)
-      redirectPath = hasEntities ? "/dashboard" : "/acontact-admin";
+      redirectPath = hasEntities ? "/dashboard" : "/contact-admin";
     }
 
+    // Check if user needs to setup entity
+    const needsEntitySetup = !hasEntities && 
+      user.role !== "super_admin" && 
+      user.role !== "admin";
+
+    // Return full user data with entities
     return {
       auth_token: token,
-        ...sanitizedUser,
-        // Add entity information
-        entities: user.entities || [],
-        primary_entity_id: user.primary_entity_id || null,
-        entity_ids: entityIds,
-        has_entities: hasEntities,
-        // Routing information for frontend
-        redirect_path: redirectPath,
-        is_super_admin: user.role === "super_admin",
-        is_admin: user.role === "admin",
-        needs_entity_setup: !hasEntities && user.role !== "super_admin",
+      ...sanitizedUser,
+      // Entity information
+      entities: userEntities,
+      entity_ids: entityIds,
+      primary_entity_id: primaryEntityId,
+      has_entities: hasEntities,
+      // Routing information for frontend
+      redirect_path: redirectPath,
+      needs_entity_setup: needsEntitySetup,
+      is_super_admin: user.role === "super_admin",
+      is_admin: user.role === "admin",
     };
   };
 
@@ -420,18 +424,14 @@ class AuthService {
   };
 
   /**
-   * Generate JWT token
+   * Generate JWT token with user information including entities
    */
   generateToken(user) {
-    // Get permissions array from object
-    // const permissionsArray = [];
+    // Extract entity IDs from user's entities array
+    const entityIds = user.entities?.map(e => e.entity_id) || [];
+    
+    // Get permissions object
     const permObj = user.permissions?.toObject?.() || user.permissions || {};
-
-    // Object.keys(permObj).forEach((key) => {
-    //   if (permObj[key] === true) {
-    //     permissionsArray.push(key);
-    //   }
-    // });
 
     return jwt.sign(
       {
@@ -441,6 +441,8 @@ class AuthService {
         name: user.name,
         role: user.role,
         permissions: permObj,
+        entities: entityIds, // Include entity IDs in token
+        primary_entity_id: user.primary_entity_id || null,
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || "7d" },
@@ -448,16 +450,36 @@ class AuthService {
   }
 
   /**
-   * Sanitize user object (remove sensitive data)
-   */
-  /**
-   * Sanitize user object for response
+   * Sanitize user object (remove sensitive data and format entities)
    */
   sanitizeUser = (user) => {
     const userObj = user.toObject ? user.toObject() : user;
+    
+    // Remove sensitive data
+    delete userObj.password;
+    delete userObj.__v;
+    delete userObj.reset_password_token;
+    delete userObj.reset_password_expires;
+    
+    // Format entities
+    let formattedEntities = [];
+    if (userObj.entities && Array.isArray(userObj.entities)) {
+      formattedEntities = userObj.entities.map(e => ({
+        entity_id: e.entity_id,
+        role: e.role || userObj.role,
+        name: e.name,
+        branch: e.branch,
+        is_primary: e.is_primary || false,
+        joined_at: e.joined_at,
+        metadata: e.metadata || {},
+      }));
+    }
+    
     return {
       uuid: userObj.uuid,
       name: userObj.name,
+      first_name: userObj.first_name,
+      last_name: userObj.last_name,
       email: userObj.email,
       role: userObj.role,
       permissions: userObj.permissions || {},
@@ -469,7 +491,7 @@ class AuthService {
       created_at: userObj.created_at,
       updated_at: userObj.updated_at,
       // Include entities in sanitized output
-      entities: userObj.entities || [],
+      entities: formattedEntities,
       primary_entity_id: userObj.primary_entity_id || null,
     };
   };

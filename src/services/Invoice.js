@@ -2,6 +2,8 @@
 const Invoice = require('../models/Invoice');
 const Payment = require('../models/Payment');
 const { logActivity } = require('../utils/ActivityLogger');
+const EmailService = require('./Email');
+const EntityService = require('./Entity');
 
 class InvoiceService {
   /**
@@ -91,6 +93,91 @@ class InvoiceService {
   }
 
   /**
+   * Send invoice via email with PDF attachment
+   */
+  async sendInvoice(entityId, uuid, email, message, req) {
+    try {
+      // Get invoice
+      const invoice = await this.getInvoiceByUuid({entity_id: entityId, uuid});
+      
+      // Get entity details for company info
+      const entity = await EntityService.getEntityById({uuid: entityId});
+      
+      // Send email with PDF attachment
+      const emailResult = await EmailService.sendInvoiceEmail(
+        invoice,
+        email || invoice.customer.email,
+        message || `Please find attached invoice ${invoice.number} for your records.`,
+        entity
+      );
+
+      if (!emailResult.success) {
+        throw new Error('EMAIL_SEND_FAILED');
+      }
+
+      // Log the email sent
+      await this.logInvoiceEmail(entityId, {
+        invoice_uuid: invoice.uuid,
+        invoice_number: invoice.number,
+        sent_to: email || invoice.customer.email,
+        sent_at: new Date(),
+        status: 'sent',
+        message_id: emailResult.messageId
+      });
+
+      // Log activity
+      await logActivity({
+        user_id: req?.user?._id || null,
+        user_name: req?.user?.name || 'system',
+        user_role: req?.user?.role || 'system',
+        action: 'invoice_sent',
+        description: `Invoice sent via email: ${invoice.number}`,
+        metadata: {
+          invoice_id: invoice.uuid,
+          invoice_number: invoice.number,
+          sent_to: email || invoice.customer.email,
+          message_id: emailResult.messageId,
+          sent_by: req?.user?.email || 'system',
+        },
+        req,
+        status: 'success'
+      });
+
+      return {
+        success: true,
+        message: 'Invoice sent successfully',
+        results: {
+          invoice_id: invoice.uuid,
+          invoice_number: invoice.number,
+          sent_to: email || invoice.customer.email,
+          sent_at: new Date().toISOString(),
+          message_id: emailResult.messageId,
+          invoice: invoice
+        }
+      };
+    } catch (error) {
+      console.error('Send invoice error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Log invoice email
+   */
+  async logInvoiceEmail(entityId, data) {
+    try {
+      // You can implement this to store email logs in a separate collection
+      // For now, just log to console or return success
+      console.log(`Invoice email sent: ${data.invoice_number} to ${data.sent_to}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to log invoice email:', error);
+      // Don't throw, just log the error
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Create invoice
    */
   async createInvoice(entityId, data, req) {
@@ -150,8 +237,8 @@ class InvoiceService {
       status,
       payments: payments || [],
       amount_paid: amount_paid || 0,
-      created_by: req.user?.uuid || null,
-      updated_by: req.user?.uuid || null,
+      created_by: req?.user?.uuid || null,
+      updated_by: req?.user?.uuid || null,
     });
 
     // Calculate totals and update statuses (triggered by pre-save hook)
@@ -159,9 +246,9 @@ class InvoiceService {
 
     // Log activity
     await logActivity({
-      user_id: req.user?._id || null,
-      user_name: req.user?.name || 'system',
-      user_role: req.user?.role || 'system',
+      user_id: req?.user?._id || null,
+      user_name: req?.user?.name || 'system',
+      user_role: req?.user?.role || 'system',
       action: 'invoice_created',
       description: `Invoice created: ${invoice.number}`,
       metadata: {
@@ -169,7 +256,7 @@ class InvoiceService {
         invoice_number: invoice.number,
         total: invoice.total,
         customer: customer.name,
-        created_by: req.user?.email || 'system',
+        created_by: req?.user?.email || 'system',
       },
       req,
       status: 'success'
@@ -240,22 +327,22 @@ class InvoiceService {
       invoice.status = status;
     }
 
-    invoice.updated_by = req.user?.uuid || null;
+    invoice.updated_by = req?.user?.uuid || null;
 
     // Save will trigger pre-save hook for recalculation
     await invoice.save();
 
     // Log activity
     await logActivity({
-      user_id: req.user?._id || null,
-      user_name: req.user?.name || 'system',
-      user_role: req.user?.role || 'system',
+      user_id: req?.user?._id || null,
+      user_name: req?.user?.name || 'system',
+      user_role: req?.user?.role || 'system',
       action: 'invoice_updated',
       description: `Invoice updated: ${invoice.number}`,
       metadata: {
         invoice_id: invoice.uuid,
         invoice_number: invoice.number,
-        updated_by: req.user?.email || 'system',
+        updated_by: req?.user?.email || 'system',
         updated_fields: Object.keys(data),
       },
       req,
@@ -303,8 +390,8 @@ class InvoiceService {
       bank_branch,
       date: date || new Date(),
       notes,
-      created_by: req.user?.uuid || null,
-      updated_by: req.user?.uuid || null,
+      created_by: req?.user?.uuid || null,
+      updated_by: req?.user?.uuid || null,
     });
 
     await payment.save();
@@ -320,14 +407,14 @@ class InvoiceService {
       notes,
     });
 
-    invoice.updated_by = req.user?.uuid || null;
+    invoice.updated_by = req?.user?.uuid || null;
     await invoice.save();
 
     // Log activity
     await logActivity({
-      user_id: req.user?._id || req.user?.uuid || null,
-      user_name: req.user?.name || 'system',
-      user_role: req.user?.role || 'system',
+      user_id: req?.user?._id || req?.user?.uuid || null,
+      user_name: req?.user?.name || 'system',
+      user_role: req?.user?.role || 'system',
       action: 'invoice_payment_added',
       description: `Payment added to invoice: ${invoice.number}`,
       metadata: {
@@ -336,7 +423,7 @@ class InvoiceService {
         amount,
         method,
         remaining_balance: invoice.remaining_balance,
-        updated_by: req.user?.email || 'system',
+        updated_by: req?.user?.email || 'system',
       },
       req,
       status: 'success'
@@ -376,29 +463,29 @@ class InvoiceService {
       reference: `PAID-${invoice.number}`,
       date: new Date(),
       notes: 'Full payment via mark as paid',
-      created_by: req.user?.uuid || null,
-      updated_by: req.user?.uuid || null,
+      created_by: req?.user?.uuid || null,
+      updated_by: req?.user?.uuid || null,
     });
 
     await payment.save();
 
     // Mark invoice as paid
     invoice.markAsPaid();
-    invoice.updated_by = req.user?.uuid || null;
+    invoice.updated_by = req?.user?.uuid || null;
     await invoice.save();
 
     // Log activity
     await logActivity({
-      user_id: req.user?._id || null,
-      user_name: req.user?.name || 'system',
-      user_role: req.user?.role || 'system',
+      user_id: req?.user?._id || null,
+      user_name: req?.user?.name || 'system',
+      user_role: req?.user?.role || 'system',
       action: 'invoice_marked_paid',
       description: `Invoice marked as paid: ${invoice.number}`,
       metadata: {
         invoice_id: invoice.uuid,
         invoice_number: invoice.number,
         amount: invoice.total,
-        updated_by: req.user?.email || 'system',
+        updated_by: req?.user?.email || 'system',
       },
       req,
       status: 'success'
@@ -425,20 +512,20 @@ class InvoiceService {
     }
 
     invoice.cancel();
-    invoice.updated_by = req.user?.uuid || null;
+    invoice.updated_by = req?.user?.uuid || null;
     await invoice.save();
 
     // Log activity
     await logActivity({
-      user_id: req.user?._id || null,
-      user_name: req.user?.name || 'system',
-      user_role: req.user?.role || 'system',
+      user_id: req?.user?._id || null,
+      user_name: req?.user?.name || 'system',
+      user_role: req?.user?.role || 'system',
       action: 'invoice_cancelled',
       description: `Invoice cancelled: ${invoice.number}`,
       metadata: {
         invoice_id: invoice.uuid,
         invoice_number: invoice.number,
-        updated_by: req.user?.email || 'system',
+        updated_by: req?.user?.email || 'system',
       },
       req,
       status: 'success'
@@ -467,15 +554,15 @@ class InvoiceService {
 
     // Log activity
     await logActivity({
-      user_id: req.user?._id || null,
-      user_name: req.user?.name || 'system',
-      user_role: req.user?.role || 'system',
+      user_id: req?.user?._id || null,
+      user_name: req?.user?.name || 'system',
+      user_role: req?.user?.role || 'system',
       action: 'invoice_deleted',
       description: `Invoice deleted: ${invoice.number}`,
       metadata: {
         invoice_id: invoice.uuid,
         invoice_number: invoice.number,
-        deleted_by: req.user?.email || 'system',
+        deleted_by: req?.user?.email || 'system',
       },
       req,
       status: 'success'

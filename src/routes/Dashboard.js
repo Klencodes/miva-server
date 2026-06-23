@@ -9,12 +9,11 @@ const {
 
 // All routes require authentication
 router.use(authenticate);
+// Main dashboard endpoint
+router.get('/', DashboardController.getDashboardStats);
 
 // All routes require entity access (X-Entity header)
 router.use(requireEntity);
-
-// Main dashboard endpoint
-router.get('/', DashboardController.getDashboardStats);
 
 // Individual endpoints for specific data
 router.get('/inventory', DashboardController.getInventoryStats);

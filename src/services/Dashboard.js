@@ -1,6 +1,6 @@
 const Inventory = require('../models/Inventory');
 const Invoice = require('../models/Invoice');
-const { logActivity } = require('../utils/ActivityLogger');
+const { logActivity, ActivityActions } = require('../utils/ActivityLogger');
 
 class DashboardService {
   /**
@@ -12,6 +12,22 @@ class DashboardService {
   }
 
   /**
+   * Apply date filters to a query
+   */
+  _applyDateFilters(query, dateFilter) {
+    if (Object.keys(dateFilter).length > 0) {
+      const dateQuery = {};
+      if (dateFilter.$gte) dateQuery.$gte = dateFilter.$gte;
+      if (dateFilter.$lte) dateQuery.$lte = dateFilter.$lte;
+      
+      if (Object.keys(dateQuery).length > 0) {
+        query.created_at = dateQuery;
+      }
+    }
+    return query;
+  }
+
+  /**
    * Get dashboard statistics for an entity or all entities with date range
    */
   async getDashboardStats(entityId, filters = {}, req = null) {
@@ -19,10 +35,17 @@ class DashboardService {
       const { date_from, date_to } = filters;
 
       const dateFilter = {};
-      if (date_from) dateFilter.$gte = new Date(date_from);
-      if (date_to)   dateFilter.$lte = new Date(date_to);
+      if (date_from) {
+        const startDate = new Date(date_from);
+        startDate.setHours(0, 0, 0, 0);
+        dateFilter.$gte = startDate;
+      }
+      if (date_to) {
+        const endDate = new Date(date_to);
+        endDate.setHours(23, 59, 59, 999);
+        dateFilter.$lte = endDate;
+      }
 
-      // All sub-methods now receive entityId (string|null) consistently
       const [
         inventoryStats,
         invoiceStats,
@@ -45,10 +68,10 @@ class DashboardService {
 
       if (req) {
         await logActivity({
-          user_id: req.user?._id || null,
+          user_id:  req.user?.uuid || req.user?._id || null,
           user_name: req.user?.name || 'system',
           user_role: req.user?.role || 'system',
-          action: 'dashboard_viewed',
+          action: ActivityActions.DASHBOARD_VIEW,
           description: 'Dashboard viewed',
           metadata: {
             entity_id: entityId || 'ALL_ENTITIES',
@@ -80,7 +103,6 @@ class DashboardService {
 
   /**
    * Get inventory statistics
-   * No changes needed - still works with new schema
    */
   async getInventoryStats(entityId = null, dateFilter = {}) {
     const matchQuery = this._entityMatch(entityId);
@@ -115,9 +137,7 @@ class DashboardService {
    */
   async getInvoiceStats(entityId = null, dateFilter = {}) {
     const matchQuery = this._entityMatch(entityId);
-    if (Object.keys(dateFilter).length > 0) {
-      matchQuery.created_at = dateFilter;
-    }
+    this._applyDateFilters(matchQuery, dateFilter);
 
     const stats = await Invoice.aggregate([
       { $match: matchQuery },
@@ -145,9 +165,7 @@ class DashboardService {
    */
   async getInvoiceStatusBreakdown(entityId = null, dateFilter = {}) {
     const matchQuery = this._entityMatch(entityId);
-    if (Object.keys(dateFilter).length > 0) {
-      matchQuery.created_at = dateFilter;
-    }
+    this._applyDateFilters(matchQuery, dateFilter);
 
     const breakdown = await Invoice.aggregate([
       { $match: matchQuery },
@@ -187,9 +205,7 @@ class DashboardService {
    */
   async getRecentTransactions(entityId = null, limit = 10, dateFilter = {}) {
     const matchQuery = this._entityMatch(entityId);
-    if (Object.keys(dateFilter).length > 0) {
-      matchQuery.created_at = dateFilter;
-    }
+    this._applyDateFilters(matchQuery, dateFilter);
 
     const invoices = await Invoice.find(matchQuery)
       .sort({ created_at: -1 })
@@ -210,9 +226,7 @@ class DashboardService {
       ...this._entityMatch(entityId),
       'payments.0': { $exists: true },
     };
-    if (Object.keys(dateFilter).length > 0) {
-      paymentQuery.created_at = dateFilter;
-    }
+    this._applyDateFilters(paymentQuery, dateFilter);
 
     const invoicesWithPayments = await Invoice.find(paymentQuery)
       .sort({ created_at: -1 })
@@ -253,9 +267,7 @@ class DashboardService {
       ...this._entityMatch(entityId),
       status: { $in: ['invoiced', 'partially', 'paid'] },
     };
-    if (Object.keys(dateFilter).length > 0) {
-      matchQuery.created_at = dateFilter;
-    }
+    this._applyDateFilters(matchQuery, dateFilter);
 
     const sales = await Invoice.aggregate([
       { $match: matchQuery },
@@ -277,14 +289,14 @@ class DashboardService {
     const result = [];
 
     let today = new Date();
-    if (dateFilter.$lte) today = new Date(dateFilter.$lte);
+    if (dateFilter.$lte) {
+      today = new Date(dateFilter.$lte);
+    }
 
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
       date.setDate(date.getDate() - i);
       const dayName = dayNames[date.getDay()];
-
-      // MongoDB $dayOfWeek: 1=Sun … 7=Sat
       const mongoDayOfWeek = date.getDay() + 1;
 
       const daySales = sales.find(s => s._id.day === mongoDayOfWeek);
@@ -304,9 +316,7 @@ class DashboardService {
    */
   async getTopSellingItems(entityId = null, limit = 5, dateFilter = {}) {
     const matchQuery = this._entityMatch(entityId);
-    if (Object.keys(dateFilter).length > 0) {
-      matchQuery.created_at = dateFilter;
-    }
+    this._applyDateFilters(matchQuery, dateFilter);
 
     const items = await Invoice.aggregate([
       { $match: matchQuery },
@@ -388,6 +398,7 @@ class DashboardService {
   async getMonthlyRevenue(entityId = null, months = 12, dateFilter = {}) {
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - months);
+    startDate.setHours(0, 0, 0, 0);
 
     const matchQuery = {
       ...this._entityMatch(entityId),
@@ -395,15 +406,13 @@ class DashboardService {
       status: { $in: ['invoiced', 'partially', 'paid'] },
     };
 
-    if (Object.keys(dateFilter).length > 0) {
-      if (dateFilter.$gte) {
-        matchQuery.created_at.$gte = new Date(
-          Math.max(new Date(dateFilter.$gte).getTime(), startDate.getTime())
-        );
-      }
-      if (dateFilter.$lte) {
-        matchQuery.created_at.$lte = dateFilter.$lte;
-      }
+    if (dateFilter.$gte) {
+      matchQuery.created_at.$gte = new Date(
+        Math.max(new Date(dateFilter.$gte).getTime(), startDate.getTime())
+      );
+    }
+    if (dateFilter.$lte) {
+      matchQuery.created_at.$lte = new Date(dateFilter.$lte);
     }
 
     const revenue = await Invoice.aggregate([
@@ -435,9 +444,7 @@ class DashboardService {
    */
   async getCustomerStats(entityId = null, dateFilter = {}) {
     const matchQuery = this._entityMatch(entityId);
-    if (Object.keys(dateFilter).length > 0) {
-      matchQuery.created_at = dateFilter;
-    }
+    this._applyDateFilters(matchQuery, dateFilter);
 
     const stats = await Invoice.aggregate([
       { $match: matchQuery },
@@ -460,7 +467,5 @@ class DashboardService {
       last_invoice:  item.last_invoice,
     }));
   }
-
 }
-
 module.exports = new DashboardService();

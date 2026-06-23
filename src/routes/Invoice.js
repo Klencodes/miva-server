@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const InvoiceController = require('../controllers/Invoice');
-const { authenticate, requireEntity } = require('../middleware/auth');
+const { authenticate, requireEntity, authorize } = require('../middleware/auth');
 
 // All routes require authentication
 router.use(authenticate);
@@ -28,8 +28,8 @@ router.get('/customer/:customerId', InvoiceController.getInvoicesByCustomer);
 
 // Invoice by UUID
 router.get('/:uuid', InvoiceController.getInvoice);
-router.put('/:uuid', InvoiceController.updateInvoice);
-router.delete('/:uuid', InvoiceController.deleteInvoice);
+router.put('/:uuid', authorize('super_admin', 'admin'), InvoiceController.updateInvoice);
+router.delete('/:uuid', authorize('super_admin', 'admin'), InvoiceController.deleteInvoice);
 
 // Invoice actions
 router.post('/:uuid/payments', InvoiceController.addPayment);

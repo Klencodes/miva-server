@@ -329,31 +329,36 @@ class InvoiceController {
    * POST /api/invoices/:uuid/send
    * Send invoice via email
    */
-  sendInvoice = async (req, res) => {
-    try {
-      const { uuid } = req.params;
-      const entityId = getCurrentEntity(req);
-      const { email, message } = req.body;
+  // In your invoice controller's sendInvoice method
+sendInvoice = async (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const entityId = getCurrentEntity(req); // This should return the entity UUID or ObjectId
+    
+    // If entityId is an ObjectId but your model uses UUID, convert it
+    // Or use the entity from the request if available
+    const entity = req.entity; // If available from middleware
+    
+    const { email, message } = req.body;
+console.log(entityId, "entityId>>>>>>>>>>>>>>>>>.")
+    const result = await InvoiceService.sendInvoice(
+      entityId, // Use the UUID instead of ObjectId
+      uuid,
+      email,
+      message,
+      req
+    );
 
-      const invoice = await InvoiceService.getInvoiceByUuid(entityId, uuid);
-
-      // This would call an email service to send the invoice
-      // For now, just return success
-      return res.json({
-        message: "Invoice sent successfully",
-        code: "INVOICE_SENT_SUCCESS",
-        success: true,
-        results: {
-          invoice_id: invoice.uuid,
-          invoice_number: invoice.number,
-          sent_to: email || invoice.customer.email,
-          sent_at: new Date().toISOString()
-        }
-      });
-    } catch (error) {
-      return this.handleError(error, res);
-    }
-  };
+    return res.json({
+      message: "Invoice sent successfully",
+      code: "INVOICE_SENT_SUCCESS",
+      success: true,
+      results: result.results
+    });
+  } catch (error) {
+    return this.handleError(error, res);
+  }
+};
 
   /**
    * POST /api/invoices/bulk

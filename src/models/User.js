@@ -81,6 +81,8 @@ const UserSchema = new mongoose.Schema(
       default: uuidv4,
       immutable: true,
     },
+    first_name: { type: String, required: true, trim: true },
+    last_name: { type: String, required: true, trim: true },
     name: { type: String, required: true, trim: true },
     email: {
       type: String,
@@ -101,11 +103,11 @@ const UserSchema = new mongoose.Schema(
     is_active: { type: Boolean, default: true },
     verified: { type: Boolean, default: false },
     permissions: { type: PermissionsSchema, default: () => ({}) },
-    last_login: { type: Date },
+    last_login: { type: String },
     reset_password_token: { type: String, select: false },
     reset_password_expires: { type: Date, select: false },
-    created_by: { type: String }, // UUID of user who created this user
-    updated_by: { type: String }, // UUID of user who last updated this user
+    created_by: { type: String },
+    updated_by: { type: String },
     
     // Entity/Organization associations - User can have multiple entities
     entities: [{

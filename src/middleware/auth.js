@@ -50,7 +50,17 @@ const authenticate = async (req, res, next) => {
       }
     }
 
-    req.user = decoded;
+    // Set user with all decoded data including entities
+    req.user = {
+      uuid: decoded.uuid || decoded.id,
+      id: decoded.id || decoded.uuid,
+      email: decoded.email,
+      name: decoded.name,
+      role: decoded.role,
+      entities: decoded.entities || [], // entities from token
+      primary_entity_id: decoded.primary_entity_id || null,
+    };
+    
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -91,16 +101,21 @@ const requireEntity = (req, res, next) => {
   // ALL_ENTITIES is restricted to super_admin/admin only
   if (entityId === 'ALL_ENTITIES') {
     return res.status(403).json({
-      error: 'Access to all entities is not permitted.',
+      success: false,
+      message: 'Access to all entities is not permitted.',
       code: 'ENTITY_ACCESS_DENIED',
     });
   }
 
   // All other roles must belong to the requested entity
-  const userEntities = req.user.entities ?? [];
+  const userEntities = req.user.entities || [];
+  console.log(req.user, "req.user>>>>>>>")
+  
+  // Check if the entityId is in the user's entities array
   if (!userEntities.includes(entityId)) {
     return res.status(403).json({
-      error: 'Access to this entity is not permitted.',
+      success: false,
+      message: 'Access to this entity is not permitted.',
       code: 'ENTITY_ACCESS_DENIED',
     });
   }
@@ -111,10 +126,10 @@ const requireEntity = (req, res, next) => {
 
 const authorize = (...allowedRoles) => (req, res, next) => {
   if (!req.user) {
-    return res.status(401).json({ error: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
+    return res.status(401).json({ success: false, message: 'Not authenticated', code: 'NOT_AUTHENTICATED' });
   }
   if (!allowedRoles.includes(req.user.role)) {
-    return res.status(403).json({ error: 'Insufficient permissions', code: 'FORBIDDEN' });
+    return res.status(403).json({success: false, message: 'Insufficient permissions', code: 'FORBIDDEN' });
   }
   next();
 };
@@ -122,7 +137,8 @@ const authorize = (...allowedRoles) => (req, res, next) => {
 const requirePermission = (permission) => (req, res, next) => {
   if (!req.user?.permissions?.includes(permission)) {
     return res.status(403).json({
-      error: `Permission denied: ${permission}`,
+      success: false,
+      message: `Permission denied: ${permission}`,
       code: 'PERMISSION_DENIED',
     });
   }

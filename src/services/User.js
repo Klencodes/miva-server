@@ -74,154 +74,271 @@ class UserService {
     return this.sanitizeUser(user);
   };
 
-  /**
-   * Create a new user
-   */
-  createUser = async (userData, req) => {
-    const { first_name, last_name, email, password, role, phone, address, entity_id } =
-      userData;
+/**
+ * Create a new user
+ * Handles entity_id as array of entity UUIDs
+ */
+createUser = async (userData, req) => {
+  const { 
+    first_name, 
+    last_name, 
+    email, 
+    password, 
+    role, 
+    phone, 
+    address, 
+    entity_id = [],
+    permissions = {},
+    is_active = true,
+    verified = true,
+  } = userData;
 
-    // Validate required fields
-    if (!first_name || !last_name || !email || !password) {
-      throw new Error("MISSING_REQUIRED_FIELDS");
-    }
+  // Validate required fields
+  if (!first_name || !last_name || !email || !password) {
+    throw new Error("MISSING_REQUIRED_FIELDS");
+  }
 
-    if (password.length < 6) {
-      throw new Error("PASSWORD_TOO_SHORT");
-    }
+  if (password.length < 6) {
+    throw new Error("PASSWORD_TOO_SHORT");
+  }
 
-    // Check if email already exists
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
-    if (existingUser) {
-      throw new Error("EMAIL_ALREADY_EXISTS");
-    }
+  // Check if email already exists
+  const existingUser = await User.findOne({ email: email.toLowerCase() });
+  if (existingUser) {
+    throw new Error("EMAIL_ALREADY_EXISTS");
+  }
 
-    // Validate role
-    const userRole = role || UserRoles.VIEWER;
-    if (!Object.values(UserRoles).includes(userRole)) {
-      throw new Error("INVALID_ROLE");
-    }
+  // Validate role
+  const userRole = role || UserRoles.SALES;
+  if (!Object.values(UserRoles).includes(userRole)) {
+    throw new Error("INVALID_ROLE");
+  }
 
-    // If entity_id is provided, validate entity exists
-    let entities = [];
-    if (entity_id) {
-      const entity = await Entity.findOne({ uuid: entity_id });
+  // Process entities - entity_id is an array of UUID strings
+  const userEntities = [];
+  let primaryEntityId = null;
+
+  if (entity_id && Array.isArray(entity_id) && entity_id.length > 0) {
+    for (const entityId of entity_id) {
+      const entity = await Entity.findOne({ uuid: entityId });
       if (!entity) {
-        throw new Error("ENTITY_NOT_FOUND");
+        throw new Error(`ENTITY_NOT_FOUND: ${entityId}`);
       }
-      entities = [{
+      
+      // Check for duplicate entity
+      if (userEntities.some(e => e.entity_id === entityId)) {
+        continue;
+      }
+
+      const isPrimary = !primaryEntityId; // First entity becomes primary
+      userEntities.push({
         entity_id: entity.uuid,
         role: userRole,
         name: entity.name,
         branch: entity.branch,
-        is_primary: true,
+        metadata: entity.metadata,
+        is_primary: isPrimary,
         joined_at: new Date()
-      }];
-    }
-
-    // Create user
-    const user = new User({
-      first_name,
-      last_name,
-      name: `${first_name} ${last_name}`,
-      email: email.toLowerCase(),
-      password,
-      role: userRole,
-      phone: phone || "",
-      address: address || "",
-      is_active: true,
-      verified: true,
-      permissions: defaultPermissionsForRole(userRole),
-      created_by: req.user?.uuid || null,
-      updated_by: req.user?.uuid || null,
-      entities: entities,
-      primary_entity_id: entities.length > 0 ? entities[0].entity_id : null
-    });
-
-    await user.save();
-
-    // Log user creation
-    await logActivity({
-      user_id: req.user?.uuid || req.user?.id || null,
-      user_name: req.user?.name || "system",
-      user_role: req.user?.role || "system",
-      action: ActivityActions.USER_CREATED || "user_created",
-      description: `User created: ${user.name}`,
-      metadata: {
-        user_id: user.uuid,
-        user_name: user.name,
-        email: user.email,
-        role: user.role,
-        created_by: req.user?.email || "system",
-      },
-      req,
-      status: "success",
-    });
-
-    return this.sanitizeUser(user);
-  };
-
-  /**
-   * Update user
-   */
-  updateUser = async (uuid, updateData, req) => {
-    const { first_name, last_name, email, phone, address, role, permissions } = updateData;
-
-    // Find user
-    const user = await User.findOne({ uuid });
-    if (!user) {
-      throw new Error("USER_NOT_FOUND");
-    }
-
-    // Check email uniqueness if being updated
-    if (email && email.toLowerCase() !== user.email) {
-      const existingUser = await User.findOne({
-        email: email.toLowerCase(),
-        _id: { $ne: user._id },
       });
-      if (existingUser) {
-        throw new Error("EMAIL_ALREADY_EXISTS");
+
+      if (isPrimary) {
+        primaryEntityId = entity.uuid;
       }
     }
 
-    // Update fields
-    if (first_name) user.first_name = first_name;
-    if (last_name) user.last_name = last_name;
-    if (email) user.email = email.toLowerCase();
-    if (phone !== undefined) user.phone = phone;
-    if (address !== undefined) user.address = address;
-    if (role) {
-      if (!Object.values(UserRoles).includes(role)) {
-        throw new Error("INVALID_ROLE");
-      }
-      user.role = role;
+    // Ensure first entity is primary
+    if (userEntities.length > 0 && !userEntities[0].is_primary) {
+      userEntities[0].is_primary = true;
+      primaryEntityId = userEntities[0].entity_id;
     }
-    if (permissions) {
-      user.permissions = { ...user.permissions, ...permissions };
-    }
+  }
 
-    user.updated_by = req.user?.uuid || null;
-    await user.save();
+  // Create user
+  const user = new User({
+    first_name,
+    last_name,
+    name: `${first_name} ${last_name}`,
+    email: email.toLowerCase(),
+    password,
+    role: userRole,
+    phone: phone || "",
+    address: address || "",
+    is_active: is_active !== undefined ? is_active : true,
+    verified: verified || false,
+    permissions: permissions || defaultPermissionsForRole(userRole),
+    created_by: req.user?.uuid || null,
+    updated_by: req.user?.uuid || null,
+    entities: userEntities,
+    primary_entity_id: primaryEntityId
+  });
 
-    // Log user update
-    await logActivity({
-      user_id: req.user?.uuid || req.user?.id || null,
-      user_name: req.user?.name || "system",
-      user_role: req.user?.role || "system",
-      action: ActivityActions.USER_UPDATED || "user_updated",
-      description: `User updated: ${user.name}`,
-      metadata: {
-        user_id: user.uuid,
-        user_name: user.name,
-        updated_fields: Object.keys(updateData),
-        updated_by: req.user?.email || "system",
-      },
-      req,
-      status: "success",
+  await user.save();
+
+  // Log user creation
+  await logActivity({
+    user_id: req.user?.uuid || req.user?.id || null,
+    user_name: req.user?.name || "system",
+    user_role: req.user?.role || "system",
+    action: ActivityActions.USER_CREATED || "user_created",
+    description: `User created: ${user.name}`,
+    metadata: {
+      user_id: user.uuid,
+      user_name: user.name,
+      email: user.email,
+      role: user.role,
+      entity_ids: entity_id,
+      primary_entity_id: primaryEntityId,
+      created_by: req.user?.email || "system",
+    },
+    req,
+    status: "success",
+  });
+
+  return this.sanitizeUser(user);
+};
+
+/**
+ * Update user
+ * Handles entity_id as array of entity UUIDs
+ */
+updateUser = async (uuid, updateData, req) => {
+  const { 
+    first_name, 
+    last_name, 
+    email, 
+    phone, 
+    address, 
+    role, 
+    permissions,
+    entity_id,
+    is_active,
+    verified,
+  } = updateData;
+
+  // Find user
+  const user = await User.findOne({ uuid });
+  if (!user) {
+    throw new Error("USER_NOT_FOUND");
+  }
+
+  // Check email uniqueness if being updated
+  if (email && email.toLowerCase() !== user.email) {
+    const existingUser = await User.findOne({
+      email: email.toLowerCase(),
+      _id: { $ne: user._id },
     });
+    if (existingUser) {
+      throw new Error("EMAIL_ALREADY_EXISTS");
+    }
+  }
 
-    return this.sanitizeUser(user);
-  };
+  // Update basic fields
+  if (first_name) user.first_name = first_name;
+  if (last_name) user.last_name = last_name;
+  if (email) user.email = email.toLowerCase();
+  if (phone !== undefined) user.phone = phone;
+  if (address !== undefined) user.address = address;
+  if (is_active !== undefined) user.is_active = is_active;
+  if (verified !== undefined) user.verified = verified;
+  
+  if (role) {
+    if (!Object.values(UserRoles).includes(role)) {
+      throw new Error("INVALID_ROLE");
+    }
+    user.role = role;
+  }
+  
+  if (permissions) {
+    user.permissions = { ...user.permissions, ...permissions };
+  }
+
+  // Update entities if provided - entity_id is an array of UUID strings
+  if (entity_id !== undefined) {
+    // If entity_id is null or empty array, clear all entities
+    if (!entity_id || (Array.isArray(entity_id) && entity_id.length === 0)) {
+      user.entities = [];
+      user.primary_entity_id = null;
+    } else if (Array.isArray(entity_id)) {
+      const updatedEntities = [];
+      let primaryEntityId = null;
+
+      for (const entityId of entity_id) {
+        const entity = await Entity.findOne({ uuid: entityId });
+        if (!entity) {
+          throw new Error(`ENTITY_NOT_FOUND: ${entityId}`);
+        }
+
+        // Check for duplicate entity
+        if (updatedEntities.some(e => e.entity_id === entityId)) {
+          continue;
+        }
+
+        const isPrimary = !primaryEntityId; // First entity becomes primary
+        updatedEntities.push({
+          entity_id: entity.uuid,
+          role: user.role,
+          name: entity.name,
+          branch: entity.branch,
+          metadata: entity.metadata,
+          is_primary: isPrimary,
+          joined_at: new Date()
+        });
+
+        if (isPrimary) {
+          primaryEntityId = entity.uuid;
+        }
+      }
+
+      // Ensure first entity is primary
+      if (updatedEntities.length > 0 && !updatedEntities[0].is_primary) {
+        updatedEntities[0].is_primary = true;
+        primaryEntityId = updatedEntities[0].entity_id;
+      }
+
+      user.entities = updatedEntities;
+      user.primary_entity_id = primaryEntityId;
+    }
+  }
+
+  // Update name if first_name or last_name changed
+  if (first_name || last_name) {
+    user.name = `${user.first_name} ${user.last_name}`;
+  }
+
+  user.updated_by = req.user?.uuid || null;
+  await user.save();
+
+  // Log user update
+  await logActivity({
+    user_id: req.user?.uuid || req.user?.id || null,
+    user_name: req.user?.name || "system",
+    user_role: req.user?.role || "system",
+    action: ActivityActions.USER_UPDATED || "user_updated",
+    description: `User updated: ${user.name}`,
+    metadata: {
+      user_id: user.uuid,
+      user_name: user.name,
+      updated_fields: Object.keys(updateData),
+      entity_ids: entity_id,
+      primary_entity_id: user.primary_entity_id,
+      updated_by: req.user?.email || "system",
+    },
+    req,
+    status: "success",
+  });
+
+  return this.sanitizeUser(user);
+};
+
+/**
+ * Sanitize user - remove sensitive data before sending to client
+ */
+sanitizeUser = (user) => {
+  const userObj = user.toObject ? user.toObject() : user;
+  delete userObj.password;
+  delete userObj.__v;
+  return userObj;
+};
 
   /**
    * Toggle user active status
@@ -377,7 +494,7 @@ class UserService {
    * FIXED: Assign entity to user
    * Admin can assign one or more entities to a user
    */
-  assignEntityToUser = async (uuid, entity_id, role = 'member', is_primary = false, req) => {
+  assignEntityToUser = async (uuid, entity_id, role = 'sales', is_primary = false, req) => {
     // Validate user exists
     const user = await User.findOne({ uuid });
     if (!user) {
@@ -399,7 +516,7 @@ class UserService {
     // Add entity to user
     user.entities.push({
       entity_id: entity.uuid,
-      role: role || 'member',
+      role: role || 'sales',
       is_primary: is_primary || false,
       joined_at: new Date()
     });
@@ -464,7 +581,7 @@ class UserService {
 
     // Process each entity
     for (const entityData of entities) {
-      const { entity_id, role = 'member', is_primary = false } = entityData;
+      const { entity_id, role = 'sales', is_primary = false } = entityData;
 
       // Validate entity exists
       const entity = await Entity.findOne({ uuid: entity_id });
@@ -483,7 +600,7 @@ class UserService {
       // Add entity to user
       user.entities.push({
         entity_id: entity.uuid,
-        role: role || 'member',
+        role: role || 'sales',
         is_primary: is_primary || false,
         joined_at: new Date()
       });
