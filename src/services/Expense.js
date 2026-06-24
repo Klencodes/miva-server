@@ -400,7 +400,23 @@ class ExpenseService {
   async getExpenseStats(entityId = null, dateFilter = {}) {
     try {
       const matchQuery = this._entityMatch(entityId);
-      this._applyDateFilters(matchQuery, dateFilter);
+      
+      // Build date filter for MongoDB
+      const mongoDateFilter = {};
+      if (dateFilter.start_date) {
+        const start = new Date(dateFilter.start_date);
+        start.setHours(0, 0, 0, 0);
+        mongoDateFilter.$gte = start;
+      }
+      if (dateFilter.end_date) {
+        const end = new Date(dateFilter.end_date);
+        end.setHours(23, 59, 59, 999);
+        mongoDateFilter.$lte = end;
+      }
+      
+      if (Object.keys(mongoDateFilter).length > 0) {
+        matchQuery.date = mongoDateFilter;
+      }
 
       const stats = await Expense.aggregate([
         { $match: matchQuery },
@@ -443,7 +459,23 @@ class ExpenseService {
   async getExpenseCategoryBreakdown(entityId = null, dateFilter = {}) {
     try {
       const matchQuery = this._entityMatch(entityId);
-      this._applyDateFilters(matchQuery, dateFilter);
+      
+      // Build date filter for MongoDB
+      const mongoDateFilter = {};
+      if (dateFilter.start_date) {
+        const start = new Date(dateFilter.start_date);
+        start.setHours(0, 0, 0, 0);
+        mongoDateFilter.$gte = start;
+      }
+      if (dateFilter.end_date) {
+        const end = new Date(dateFilter.end_date);
+        end.setHours(23, 59, 59, 999);
+        mongoDateFilter.$lte = end;
+      }
+      
+      if (Object.keys(mongoDateFilter).length > 0) {
+        matchQuery.date = mongoDateFilter;
+      }
 
       const breakdown = await Expense.aggregate([
         { $match: matchQuery },
@@ -474,7 +506,23 @@ class ExpenseService {
   async getExpenseStatusBreakdown(entityId = null, dateFilter = {}) {
     try {
       const matchQuery = this._entityMatch(entityId);
-      this._applyDateFilters(matchQuery, dateFilter);
+      
+      // Build date filter for MongoDB
+      const mongoDateFilter = {};
+      if (dateFilter.start_date) {
+        const start = new Date(dateFilter.start_date);
+        start.setHours(0, 0, 0, 0);
+        mongoDateFilter.$gte = start;
+      }
+      if (dateFilter.end_date) {
+        const end = new Date(dateFilter.end_date);
+        end.setHours(23, 59, 59, 999);
+        mongoDateFilter.$lte = end;
+      }
+      
+      if (Object.keys(mongoDateFilter).length > 0) {
+        matchQuery.date = mongoDateFilter;
+      }
 
       const breakdown = await Expense.aggregate([
         { $match: matchQuery },

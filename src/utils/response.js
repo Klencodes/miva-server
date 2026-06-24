@@ -8,14 +8,7 @@ class ApiResponse {
             this.count = pagination.count;
             this.next = pagination.next;
             this.previous = pagination.previous;
-
-            // Copy totals if provided
-            if (pagination.total_orders !== undefined) {
-                this.total_orders = pagination.total_orders;
-            }
-            if (pagination.total_sales !== undefined) {
-                this.total_sales = pagination.total_sales;
-            }
+            this.total_page = pagination.total_page;
         }
     }
 }

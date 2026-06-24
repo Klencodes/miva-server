@@ -12,18 +12,7 @@ class InventoryController {
   getItems = async (req, res) => {
     try {
       const entityId = getCurrentEntity(req);
-      const { 
-        page = 1, 
-        limit = 10, 
-        search, 
-        type, 
-        min_quantity, 
-        max_quantity,
-        min_price,
-        max_price,
-        stock_status,
-        supplier,
-      } = req.query;
+      const { page = 1, limit = 10, search, type, min_quantity, max_quantity,min_price,max_price,stock_status,supplier,} = req.query;
 
       const result = await InventoryService.getItems(
         entityId,

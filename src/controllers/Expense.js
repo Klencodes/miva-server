@@ -164,26 +164,24 @@ class ExpenseController {
     try {
       const { start_date, end_date, entity_id } = req.query;
 
-      const filters = {};
-      if (start_date) filters.start_date = start_date;
-      if (end_date) filters.end_date = end_date;
+      // IMPORTANT: Get entity ID from the request
+      // If entity_id is provided in query, use it, otherwise use getCurrentEntity
+      let entityId = entity_id || getCurrentEntity(req);
 
+      // If entity_id is 'ALL_ENTITIES' and user is admin, set to null (all entities)
       const isAdmin = req.user?.role === 'super_admin' || req.user?.role === 'admin';
-      let entityId = null;
-      
-      if (entity_id === 'ALL_ENTITIES') {
-        if (isAdmin) {
-          entityId = null;
-        } else {
-          entityId = req.user?.primary_entity_id || null;
-        }
-      } else if (entity_id && entity_id !== '') {
-        entityId = entity_id;
-      } else {
-        entityId = req.user?.primary_entity_id || null;
+      if (entityId === 'ALL_ENTITIES' && isAdmin) {
+        entityId = null;
       }
 
-      const stats = await ExpenseService.getExpenseStats(entityId, filters);
+      // Build date filters
+      const dateFilter = {};
+      if (start_date) dateFilter.start_date = start_date;
+      if (end_date) dateFilter.end_date = end_date;
+
+      console.log('Fetching stats with entityId:', entityId); // Debug log
+
+      const stats = await ExpenseService.getExpenseStats(entityId, dateFilter);
 
       const response = new ApiResponse(stats, "Expense statistics retrieved successfully");
       return res.json(response);
@@ -200,26 +198,22 @@ class ExpenseController {
     try {
       const { start_date, end_date, entity_id } = req.query;
 
-      const filters = {};
-      if (start_date) filters.start_date = start_date;
-      if (end_date) filters.end_date = end_date;
+      // IMPORTANT: Get entity ID from the request
+      let entityId = entity_id || getCurrentEntity(req);
 
       const isAdmin = req.user?.role === 'super_admin' || req.user?.role === 'admin';
-      let entityId = null;
-      
-      if (entity_id === 'ALL_ENTITIES') {
-        if (isAdmin) {
-          entityId = null;
-        } else {
-          entityId = req.user?.primary_entity_id || null;
-        }
-      } else if (entity_id && entity_id !== '') {
-        entityId = entity_id;
-      } else {
-        entityId = req.user?.primary_entity_id || null;
+      if (entityId === 'ALL_ENTITIES' && isAdmin) {
+        entityId = null;
       }
 
-      const breakdown = await ExpenseService.getExpenseCategoryBreakdown(entityId, filters);
+      // Build date filters
+      const dateFilter = {};
+      if (start_date) dateFilter.start_date = start_date;
+      if (end_date) dateFilter.end_date = end_date;
+
+      console.log('Fetching category breakdown with entityId:', entityId); // Debug log
+
+      const breakdown = await ExpenseService.getExpenseCategoryBreakdown(entityId, dateFilter);
 
       const response = new ApiResponse(breakdown, "Expense category breakdown retrieved successfully");
       return res.json(response);
@@ -236,26 +230,22 @@ class ExpenseController {
     try {
       const { start_date, end_date, entity_id } = req.query;
 
-      const filters = {};
-      if (start_date) filters.start_date = start_date;
-      if (end_date) filters.end_date = end_date;
+      // IMPORTANT: Get entity ID from the request
+      let entityId = entity_id || getCurrentEntity(req);
 
       const isAdmin = req.user?.role === 'super_admin' || req.user?.role === 'admin';
-      let entityId = null;
-      
-      if (entity_id === 'ALL_ENTITIES') {
-        if (isAdmin) {
-          entityId = null;
-        } else {
-          entityId = req.user?.primary_entity_id || null;
-        }
-      } else if (entity_id && entity_id !== '') {
-        entityId = entity_id;
-      } else {
-        entityId = req.user?.primary_entity_id || null;
+      if (entityId === 'ALL_ENTITIES' && isAdmin) {
+        entityId = null;
       }
 
-      const breakdown = await ExpenseService.getExpenseStatusBreakdown(entityId, filters);
+      // Build date filters
+      const dateFilter = {};
+      if (start_date) dateFilter.start_date = start_date;
+      if (end_date) dateFilter.end_date = end_date;
+
+      console.log('Fetching status breakdown with entityId:', entityId); // Debug log
+
+      const breakdown = await ExpenseService.getExpenseStatusBreakdown(entityId, dateFilter);
 
       const response = new ApiResponse(breakdown, "Expense status breakdown retrieved successfully");
       return res.json(response);

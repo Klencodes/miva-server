@@ -269,12 +269,14 @@ InvoiceSchema.methods.updateInvoiceStatus = function() {
   }
   
   // If quoted, keep as quoted unless paid
-  if (this.status === 'quoted') {
-    if (this.payment_status === 'paid') {
-      this.status = 'invoiced';
-    }
-    return;
+  if (this.status === 'quoted' || this.status === 'draft') {
+  // AUTOMATIC: Change to invoiced if paid
+  if (this.payment_status === 'paid' || this.amount_paid >= this.total) {
+    this.status = 'invoiced';
   }
+  return;
+}
+  
   
   // For invoiced status
   if (this.status === 'invoiced') {
