@@ -1,5 +1,7 @@
 // controllers/customerController.js
 const CustomerService = require('../services/Customer');
+const { ApiResponse, ErrorResponse } = require('../utils/response');
+const Pagination = require('../utils/pagination'); // Your pagination utility
 
 class CustomerController {
   /**
@@ -25,12 +27,23 @@ class CustomerController {
         parseInt(limit)
       );
 
-      return res.json({
-        message: "Customers retrieved successfully",
-        code: "CUSTOMERS_FETCH_SUCCESS",
-        success: true,
-        results: result
-      });
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}${req.path}`;
+      const pagination = Pagination.generatePaginationResponse(
+        result.customers,
+        result.count,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query
+      );
+
+      const response = new ApiResponse(
+        result.customers,
+        "Customers retrieved successfully",
+        pagination
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -45,12 +58,8 @@ class CustomerController {
       const { uuid } = req.params;
       const customer = await CustomerService.getCustomerByUuid(uuid);
 
-      return res.json({
-        message: "Customer retrieved successfully",
-        code: "CUSTOMER_FETCH_SUCCESS",
-        success: true,
-        results: { customer }
-      });
+      const response = new ApiResponse(customer, "Customer retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -65,12 +74,8 @@ class CustomerController {
       const { email } = req.params;
       const customer = await CustomerService.getCustomerByEmail(email);
 
-      return res.json({
-        message: "Customer retrieved successfully",
-        code: "CUSTOMER_FETCH_SUCCESS",
-        success: true,
-        results: { customer }
-      });
+      const response = new ApiResponse(customer, "Customer retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -84,12 +89,8 @@ class CustomerController {
     try {
       const stats = await CustomerService.getCustomerStats();
 
-      return res.json({
-        message: "Customer statistics retrieved successfully",
-        code: "CUSTOMER_STATS_FETCH_SUCCESS",
-        success: true,
-        results: stats
-      });
+      const response = new ApiResponse(stats, "Customer statistics retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -104,20 +105,15 @@ class CustomerController {
       const { q, limit = 10 } = req.query;
 
       if (!q) {
-        throw new Error('SEARCH_TERM_REQUIRED');
+        const error = new Error('SEARCH_TERM_REQUIRED');
+        error.status = 400;
+        throw error;
       }
 
-      const customers = await CustomerService.searchCustomers(
-        q,
-        parseInt(limit)
-      );
+      const customers = await CustomerService.searchCustomers(q, parseInt(limit));
 
-      return res.json({
-        message: "Customers searched successfully",
-        code: "CUSTOMERS_SEARCH_SUCCESS",
-        success: true,
-        results: { customers }
-      });
+      const response = new ApiResponse({ customers }, "Customers searched successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -132,12 +128,8 @@ class CustomerController {
       const customerData = req.body;
       const customer = await CustomerService.createCustomer(customerData, req);
 
-      return res.json({
-        message: "Customer created successfully",
-        code: "CUSTOMER_CREATED_SUCCESS",
-        success: true,
-        results: { customer }
-      });
+      const response = new ApiResponse(customer, "Customer created successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -152,17 +144,15 @@ class CustomerController {
       const { customers } = req.body;
 
       if (!customers || !Array.isArray(customers) || customers.length === 0) {
-        throw new Error('CUSTOMERS_ARRAY_REQUIRED');
+        const error = new Error('CUSTOMERS_ARRAY_REQUIRED');
+        error.status = 400;
+        throw error;
       }
 
       const result = await CustomerService.bulkCreateCustomers(customers, req);
 
-      return res.json({
-        message: "Bulk customer creation completed",
-        code: "BULK_CUSTOMER_CREATED",
-        success: true,
-        results: result
-      });
+      const response = new ApiResponse(result, "Bulk customer creation completed");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -178,12 +168,8 @@ class CustomerController {
       const updateData = req.body;
       const customer = await CustomerService.updateCustomer(uuid, updateData, req);
 
-      return res.json({
-        message: "Customer updated successfully",
-        code: "CUSTOMER_UPDATED_SUCCESS",
-        success: true,
-        results: { customer }
-      });
+      const response = new ApiResponse(customer, "Customer updated successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -199,21 +185,16 @@ class CustomerController {
       const { is_active } = req.body;
 
       if (is_active === undefined) {
-        throw new Error('MISSING_ACTIVE_STATUS');
+        const error = new Error('MISSING_ACTIVE_STATUS');
+        error.status = 400;
+        throw error;
       }
 
-      const customer = await CustomerService.toggleCustomerActive(
-        uuid,
-        is_active,
-        req
-      );
+      const customer = await CustomerService.toggleCustomerActive(uuid, is_active, req);
 
-      return res.json({
-        message: is_active ? "Customer activated successfully" : "Customer deactivated successfully",
-        code: "CUSTOMER_STATUS_UPDATED",
-        success: true,
-        results: { customer }
-      });
+      const message = is_active ? "Customer activated successfully" : "Customer deactivated successfully";
+      const response = new ApiResponse(customer, message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -228,12 +209,11 @@ class CustomerController {
       const { uuid } = req.params;
       const result = await CustomerService.deleteCustomer(uuid, req);
 
-      return res.json({
-        message: result.message,
-        code: result.soft_delete ? "CUSTOMER_DEACTIVATED" : "CUSTOMER_DELETED_SUCCESS",
-        success: true,
-        results: result.soft_delete ? { customer: result.customer } : undefined
-      });
+      const response = new ApiResponse(
+        result.soft_delete ? { customer: result.customer } : null,
+        result.message
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -246,76 +226,38 @@ class CustomerController {
     console.error('Customer Controller Error:', error);
 
     const errorMap = {
-      'NAME_REQUIRED': {
-        status: 400,
-        message: 'Customer name is required',
-        code: 'NAME_REQUIRED'
-      },
-      'EMAIL_ALREADY_EXISTS': {
-        status: 409,
-        message: 'Email already exists',
-        code: 'EMAIL_ALREADY_EXISTS'
-      },
-      'PHONE_ALREADY_EXISTS': {
-        status: 409,
-        message: 'Phone number already exists',
-        code: 'PHONE_ALREADY_EXISTS'
-      },
-      'CUSTOMER_NOT_FOUND': {
-        status: 404,
-        message: 'Customer not found',
-        code: 'CUSTOMER_NOT_FOUND'
-      },
-      'MISSING_ACTIVE_STATUS': {
-        status: 400,
-        message: 'Active status (is_active) is required',
-        code: 'MISSING_ACTIVE_STATUS'
-      },
-      'CUSTOMERS_ARRAY_REQUIRED': {
-        status: 400,
-        message: 'Customers array is required for bulk creation',
-        code: 'CUSTOMERS_ARRAY_REQUIRED'
-      },
-      'SEARCH_TERM_REQUIRED': {
-        status: 400,
-        message: 'Search term is required',
-        code: 'SEARCH_TERM_REQUIRED'
-      }
+      'NAME_REQUIRED': { status: 400, message: 'Customer name is required' },
+      'EMAIL_ALREADY_EXISTS': { status: 409, message: 'Email already exists' },
+      'PHONE_ALREADY_EXISTS': { status: 409, message: 'Phone number already exists' },
+      'CUSTOMER_NOT_FOUND': { status: 404, message: 'Customer not found' },
+      'MISSING_ACTIVE_STATUS': { status: 400, message: 'Active status (is_active) is required' },
+      'CUSTOMERS_ARRAY_REQUIRED': { status: 400, message: 'Customers array is required for bulk creation' },
+      'SEARCH_TERM_REQUIRED': { status: 400, message: 'Search term is required' }
     };
 
     // Check for MongoDB duplicate key error
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
-      return res.status(409).json({
-        message: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`,
-        code: 'DUPLICATE_ENTRY',
-        success: false,
-        field
-      });
+      const errorResponse = new ErrorResponse(
+        `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`
+      );
+      return res.status(409).json(errorResponse);
     }
 
     // Check for validation error
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        message: 'Validation error: ' + messages.join(', '),
-        code: 'VALIDATION_ERROR',
-        success: false,
-        errors: messages
-      });
+      const errorResponse = new ErrorResponse('Validation error: ' + messages.join(', '));
+      return res.status(400).json(errorResponse);
     }
 
     const errorConfig = errorMap[error.message] || {
-      status: 500,
-      message: error.message || 'Internal server error',
-      code: 'SERVER_ERROR'
+      status: error.status || 500,
+      message: error.message || 'Internal server error'
     };
 
-    return res.status(errorConfig.status).json({
-      message: errorConfig.message,
-      code: errorConfig.code,
-      success: false
-    });
+    const errorResponse = new ErrorResponse(errorConfig.message);
+    return res.status(errorConfig.status).json(errorResponse);
   }
 }
 

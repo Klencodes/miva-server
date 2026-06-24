@@ -1,11 +1,19 @@
 // services/invoiceService.js
 const Invoice = require('../models/Invoice');
 const Payment = require('../models/Payment');
-const { logActivity } = require('../utils/ActivityLogger');
+const { logActivity, ActivityActions } = require('../utils/ActivityLogger');
 const EmailService = require('./Email');
 const EntityService = require('./Entity');
 
 class InvoiceService {
+  /**
+   * Format number to 2 decimal places
+   */
+  formatCurrency(value) {
+    if (value === undefined || value === null || isNaN(value)) return 0;
+    return Math.round(value * 100) / 100;
+  }
+
   /**
    * Get all invoices with pagination and filtering
    */
@@ -59,14 +67,34 @@ class InvoiceService {
       Invoice.countDocuments(query),
     ]);
 
+    // Format currency values
+    const formattedInvoices = invoices.map(i => {
+      const invoice = i.toSafeObject();
+      if (invoice.total !== undefined) invoice.total = this.formatCurrency(invoice.total);
+      if (invoice.subtotal !== undefined) invoice.subtotal = this.formatCurrency(invoice.subtotal);
+      if (invoice.discount_amount !== undefined) invoice.discount_amount = this.formatCurrency(invoice.discount_amount);
+      if (invoice.vat_amount !== undefined) invoice.vat_amount = this.formatCurrency(invoice.vat_amount);
+      if (invoice.amount_paid !== undefined) invoice.amount_paid = this.formatCurrency(invoice.amount_paid);
+      if (invoice.remaining_balance !== undefined) invoice.remaining_balance = this.formatCurrency(invoice.remaining_balance);
+      
+      // Format item prices
+      if (invoice.items && Array.isArray(invoice.items)) {
+        invoice.items = invoice.items.map(item => ({
+          ...item,
+          price: this.formatCurrency(item.price || 0),
+          total: this.formatCurrency((item.price || 0) * (item.quantity || 0))
+        }));
+      }
+      
+      return invoice;
+    });
+
     return {
-      invoices: invoices.map(i => i.toSafeObject()),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      invoices: formattedInvoices,
+      count: total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 
@@ -78,7 +106,24 @@ class InvoiceService {
     if (!invoice) {
       throw new Error('INVOICE_NOT_FOUND');
     }
-    return invoice.toSafeObject();
+    const formattedInvoice = invoice.toSafeObject();
+    if (formattedInvoice.total !== undefined) formattedInvoice.total = this.formatCurrency(formattedInvoice.total);
+    if (formattedInvoice.subtotal !== undefined) formattedInvoice.subtotal = this.formatCurrency(formattedInvoice.subtotal);
+    if (formattedInvoice.discount_amount !== undefined) formattedInvoice.discount_amount = this.formatCurrency(formattedInvoice.discount_amount);
+    if (formattedInvoice.vat_amount !== undefined) formattedInvoice.vat_amount = this.formatCurrency(formattedInvoice.vat_amount);
+    if (formattedInvoice.amount_paid !== undefined) formattedInvoice.amount_paid = this.formatCurrency(formattedInvoice.amount_paid);
+    if (formattedInvoice.remaining_balance !== undefined) formattedInvoice.remaining_balance = this.formatCurrency(formattedInvoice.remaining_balance);
+    
+    // Format item prices
+    if (formattedInvoice.items && Array.isArray(formattedInvoice.items)) {
+      formattedInvoice.items = formattedInvoice.items.map(item => ({
+        ...item,
+        price: this.formatCurrency(item.price || 0),
+        total: this.formatCurrency((item.price || 0) * (item.quantity || 0))
+      }));
+    }
+    
+    return formattedInvoice;
   }
 
   /**
@@ -89,7 +134,7 @@ class InvoiceService {
     if (!invoice) {
       throw new Error('INVOICE_NOT_FOUND');
     }
-    return invoice.toSafeObject();
+    return this.getInvoiceByUuid(entityId, invoice.uuid);
   }
 
   /**
@@ -98,7 +143,7 @@ class InvoiceService {
   async sendInvoice(entityId, uuid, email, message, req) {
     try {
       // Get invoice
-      const invoice = await this.getInvoiceByUuid({entity_id: entityId, uuid});
+      const invoice = await this.getInvoiceByUuid(entityId, uuid);
       
       // Get entity details for company info
       const entity = await EntityService.getEntityById({uuid: entityId});
@@ -166,13 +211,10 @@ class InvoiceService {
    */
   async logInvoiceEmail(entityId, data) {
     try {
-      // You can implement this to store email logs in a separate collection
-      // For now, just log to console or return success
       console.log(`Invoice email sent: ${data.invoice_number} to ${data.sent_to}`);
       return { success: true };
     } catch (error) {
       console.error('Failed to log invoice email:', error);
-      // Don't throw, just log the error
       return { success: false, error: error.message };
     }
   }
@@ -215,6 +257,8 @@ class InvoiceService {
       if (!item.name || !item.price || !item.quantity) {
         throw new Error('INVALID_ITEM_DATA');
       }
+      // Format item price
+      item.price = this.formatCurrency(item.price);
     }
 
     // Create invoice
@@ -236,7 +280,7 @@ class InvoiceService {
       currency,
       status,
       payments: payments || [],
-      amount_paid: amount_paid || 0,
+      amount_paid: this.formatCurrency(amount_paid),
       created_by: req?.user?.uuid || null,
       updated_by: req?.user?.uuid || null,
     });
@@ -249,7 +293,7 @@ class InvoiceService {
       user_id: req?.user?._id || null,
       user_name: req?.user?.name || 'system',
       user_role: req?.user?.role || 'system',
-      action: 'invoice_created',
+      action: ActivityActions.INVENTORY_CREATED,
       description: `Invoice created: ${invoice.number}`,
       metadata: {
         invoice_id: invoice.uuid,
@@ -262,7 +306,10 @@ class InvoiceService {
       status: 'success'
     });
 
-    return invoice.toSafeObject();
+    const formattedInvoice = invoice.toSafeObject();
+    if (formattedInvoice.total !== undefined) formattedInvoice.total = this.formatCurrency(formattedInvoice.total);
+    if (formattedInvoice.amount_paid !== undefined) formattedInvoice.amount_paid = this.formatCurrency(formattedInvoice.amount_paid);
+    return formattedInvoice;
   }
 
   /**
@@ -281,7 +328,6 @@ class InvoiceService {
 
     // If invoice is paid, only allow certain updates
     if (invoice.payment_status === 'paid' && invoice.status === 'invoiced') {
-      // Only allow notes and terms updates for paid invoices
       const allowedFields = ['notes', 'terms'];
       const requestedUpdates = Object.keys(data);
       const hasDisallowedUpdates = requestedUpdates.some(field => !allowedFields.includes(field));
@@ -311,7 +357,13 @@ class InvoiceService {
     if (date) invoice.date = date;
     if (due_date) invoice.due_date = due_date;
     if (customer) invoice.customer = { ...invoice.customer, ...customer };
-    if (items) invoice.items = items;
+    if (items) {
+      // Format item prices
+      invoice.items = items.map(item => ({
+        ...item,
+        price: this.formatCurrency(item.price || 0)
+      }));
+    }
     if (discount_type) invoice.discount_type = discount_type;
     if (discount_rate !== undefined) invoice.discount_rate = discount_rate;
     if (vat_rate !== undefined) invoice.vat_rate = vat_rate;
@@ -349,7 +401,10 @@ class InvoiceService {
       status: 'success'
     });
 
-    return invoice.toSafeObject();
+    const formattedInvoice = invoice.toSafeObject();
+    if (formattedInvoice.total !== undefined) formattedInvoice.total = this.formatCurrency(formattedInvoice.total);
+    if (formattedInvoice.amount_paid !== undefined) formattedInvoice.amount_paid = this.formatCurrency(formattedInvoice.amount_paid);
+    return formattedInvoice;
   }
 
   /**
@@ -375,8 +430,9 @@ class InvoiceService {
       throw new Error('INVALID_PAYMENT_AMOUNT');
     }
 
+    const formattedAmount = this.formatCurrency(amount);
     const remaining = invoice.total - invoice.amount_paid;
-    if (amount > remaining) {
+    if (formattedAmount > remaining) {
       throw new Error('PAYMENT_EXCEEDS_BALANCE');
     }
 
@@ -384,7 +440,7 @@ class InvoiceService {
     const payment = new Payment({
       entity_id: entityId,
       invoice_id: invoice.uuid,
-      amount,
+      amount: formattedAmount,
       method,
       reference,
       bank_branch,
@@ -399,7 +455,7 @@ class InvoiceService {
     // Add payment to invoice
     invoice.addPayment({
       payment_id: payment.uuid,
-      amount,
+      amount: formattedAmount,
       method,
       reference,
       bank_branch,
@@ -420,7 +476,7 @@ class InvoiceService {
       metadata: {
         invoice_id: invoice.uuid,
         invoice_number: invoice.number,
-        amount,
+        amount: formattedAmount,
         method,
         remaining_balance: invoice.remaining_balance,
         updated_by: req?.user?.email || 'system',
@@ -429,8 +485,13 @@ class InvoiceService {
       status: 'success'
     });
 
+    const formattedInvoice = invoice.toSafeObject();
+    if (formattedInvoice.total !== undefined) formattedInvoice.total = this.formatCurrency(formattedInvoice.total);
+    if (formattedInvoice.amount_paid !== undefined) formattedInvoice.amount_paid = this.formatCurrency(formattedInvoice.amount_paid);
+    if (formattedInvoice.remaining_balance !== undefined) formattedInvoice.remaining_balance = this.formatCurrency(formattedInvoice.remaining_balance);
+    
     return {
-      invoice: invoice.toSafeObject(),
+      invoice: formattedInvoice,
       payment: payment,
     };
   }
@@ -452,7 +513,7 @@ class InvoiceService {
       throw new Error('INVOICE_ALREADY_PAID');
     }
 
-    const remaining = invoice.total - invoice.amount_paid;
+    const remaining = this.formatCurrency(invoice.total - invoice.amount_paid);
 
     // Create payment record for full amount
     const payment = new Payment({
@@ -491,7 +552,10 @@ class InvoiceService {
       status: 'success'
     });
 
-    return invoice.toSafeObject();
+    const formattedInvoice = invoice.toSafeObject();
+    if (formattedInvoice.total !== undefined) formattedInvoice.total = this.formatCurrency(formattedInvoice.total);
+    if (formattedInvoice.amount_paid !== undefined) formattedInvoice.amount_paid = this.formatCurrency(formattedInvoice.amount_paid);
+    return formattedInvoice;
   }
 
   /**
@@ -531,7 +595,10 @@ class InvoiceService {
       status: 'success'
     });
 
-    return invoice.toSafeObject();
+    const formattedInvoice = invoice.toSafeObject();
+    if (formattedInvoice.total !== undefined) formattedInvoice.total = this.formatCurrency(formattedInvoice.total);
+    if (formattedInvoice.amount_paid !== undefined) formattedInvoice.amount_paid = this.formatCurrency(formattedInvoice.amount_paid);
+    return formattedInvoice;
   }
 
   /**
@@ -616,16 +683,21 @@ class InvoiceService {
       by_status: stats.map(s => ({
         status: s._id,
         count: s.count,
-        total_amount: s.total_amount,
-        total_paid: s.total_paid,
+        total_amount: this.formatCurrency(s.total_amount || 0),
+        total_paid: this.formatCurrency(s.total_paid || 0),
       })),
       by_payment_status: paymentStats.map(s => ({
         payment_status: s._id,
         count: s.count,
-        total_amount: s.total_amount,
-        total_paid: s.total_paid,
+        total_amount: this.formatCurrency(s.total_amount || 0),
+        total_paid: this.formatCurrency(s.total_paid || 0),
       })),
-      totals: totals[0] || {
+      totals: totals[0] ? {
+        total_invoices: totals[0].total_invoices || 0,
+        total_amount: this.formatCurrency(totals[0].total_amount || 0),
+        total_paid: this.formatCurrency(totals[0].total_paid || 0),
+        total_remaining: this.formatCurrency(totals[0].total_remaining || 0),
+      } : {
         total_invoices: 0,
         total_amount: 0,
         total_paid: 0,

@@ -6,6 +6,14 @@ const { ActivityActions } = require("../models/ActivityLog");
 
 class EntityService {
   /**
+   * Format number to 2 decimal places
+   */
+  formatCurrency(value) {
+    if (value === undefined || value === null || isNaN(value)) return 0;
+    return Math.round(value * 100) / 100;
+  }
+
+  /**
    * Get all entities with pagination and filtering
    */
   getEntities = async (filters = {}, page = 1, limit = 10) => {
@@ -38,14 +46,14 @@ class EntityService {
       Entity.countDocuments(query),
     ]);
 
+    const sanitizedEntities = entities.map((e) => this.sanitizeEntity(e));
+
     return {
-      entities: entities.map((e) => this.sanitizeEntity(e)),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      results: sanitizedEntities,
+      count: total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   };
 
@@ -82,146 +90,149 @@ class EntityService {
     return this.sanitizeEntity(entity);
   };
 
-createEntity = async (entityData, req) => {
-  const {
-    name, email, phone, website, branch, address, city, state,
-    country, zip_code, registration_number, tax_id, currency, metadata = {},
-  } = entityData;
+  /**
+   * Create entity
+   */
+  createEntity = async (entityData, req) => {
+    const {
+      name, email, phone, website, branch, address, city, state,
+      country, zip_code, registration_number, tax_id, currency, metadata = {},
+    } = entityData;
 
-  if (!name || !email) throw new Error("MISSING_REQUIRED_FIELDS");
+    if (!name || !email) throw new Error("MISSING_REQUIRED_FIELDS");
 
-  // Uniqueness checks
-  if (await Entity.findOne({ email: email.toLowerCase() }))
-    throw new Error("EMAIL_ALREADY_EXISTS");
-  if (registration_number && await Entity.findOne({ registration_number }))
-    throw new Error("REGISTRATION_NUMBER_ALREADY_EXISTS");
-  if (tax_id && await Entity.findOne({ tax_id }))
-    throw new Error("TAX_ID_ALREADY_EXISTS");
+    // Uniqueness checks
+    if (await Entity.findOne({ email: email.toLowerCase() }))
+      throw new Error("EMAIL_ALREADY_EXISTS");
+    if (registration_number && await Entity.findOne({ registration_number }))
+      throw new Error("REGISTRATION_NUMBER_ALREADY_EXISTS");
+    if (tax_id && await Entity.findOne({ tax_id }))
+      throw new Error("TAX_ID_ALREADY_EXISTS");
 
-  const { User } = require('../models/User');
-  const actor = req.user;
+    const { User } = require('../models/User');
+    const actor = req.user;
 
-  // ─── Ensure "All Entities" system entity exists ───────────────────────────
-  const allEntitiesExists = await Entity.findOne({ uuid: "ALL_ENTITIES" });
+    // ─── Ensure "All Entities" system entity exists ───────────────────────────
+    const allEntitiesExists = await Entity.findOne({ uuid: "ALL_ENTITIES" });
 
-  if (!allEntitiesExists) {
-    const systemIdentifier = `SYS-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const totalEntities = await Entity.countDocuments();
+    if (!allEntitiesExists) {
+      const systemIdentifier = `SYS-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const totalEntities = await Entity.countDocuments();
 
-    const allEntities = await new Entity({
-      uuid: "ALL_ENTITIES",
-      name: "All Entities",
-      branch: "All",
-      email: "system@all-entities.local",
+      const allEntities = await new Entity({
+        uuid: "ALL_ENTITIES",
+        name: "All Entities",
+        branch: "All",
+        email: "system@all-entities.local",
+        phone, website, address, city, state, country, zip_code,
+        registration_number: registration_number || `SYS-REG-${Date.now()}`,
+        tax_id: tax_id || `SYS-TAX-${Date.now()}`,
+        currency: currency || "GHS",
+        is_active: true,
+        is_system_entity: true,
+        created_by: actor?.uuid || null,
+        updated_by: actor?.uuid || null,
+        metadata: {
+          is_system_entity: true,
+          created_automatically: true,
+          system_identifier: systemIdentifier,
+          original_entity_name: name,
+          original_entity_email: email,
+          original_entity_branch: branch || "Head Quarters",
+          original_registration_number: registration_number || null,
+          original_tax_id: tax_id || null,
+          created_from_entity_data: true,
+          ...(totalEntities === 0
+            ? { created_when_no_entities_existed: true }
+            : { created_when_no_all_entities_existed: true }),
+          ...metadata,
+        },
+      }).save();
+
+      await logActivity({
+        user_id: actor?._id || actor?.uuid || null,
+        user_name: actor?.name || "system",
+        user_role: actor?.role || "system",
+        action: "SYSTEM_ENTITY_CREATED",
+        description: `System entity created: All Entities from ${name}`,
+        metadata: {
+          entity_id: allEntities.uuid,
+          entity_name: allEntities.name,
+          original_entity_name: name,
+          original_entity_email: email,
+          created_by: actor?.email || "system",
+          is_system_entity: true,
+        },
+        req,
+        status: "success",
+      });
+
+      // Assign "All Entities" to creator
+      if (actor?.uuid) {
+        const user = await User.findOne({ uuid: actor.uuid });
+        const hasIt = user?.entities?.some(e => e.entity_id === "ALL_ENTITIES");
+        if (!hasIt) {
+          await User.findOneAndUpdate(
+            { uuid: actor.uuid },
+            {
+              $push: { entities: { entity_id: allEntities.uuid, role: actor.role || 'admin', is_primary: totalEntities === 0, joined_at: new Date() } },
+              ...(totalEntities === 0 && { $set: { primary_entity_id: allEntities.uuid } }),
+            }
+          );
+        }
+      }
+    }
+
+    // ─── Create the new entity ────────────────────────────────────────────────
+    const entity = await new Entity({
+      name, branch: branch || "Head Quarters",
+      email: email.toLowerCase(),
       phone, website, address, city, state, country, zip_code,
-      registration_number: registration_number || `SYS-REG-${Date.now()}`,
-      tax_id: tax_id || `SYS-TAX-${Date.now()}`,
+      registration_number, tax_id,
       currency: currency || "GHS",
+      metadata,
       is_active: true,
-      is_system_entity: true,
       created_by: actor?.uuid || null,
       updated_by: actor?.uuid || null,
-      metadata: {
-        is_system_entity: true,
-        created_automatically: true,
-        system_identifier: systemIdentifier,
-        original_entity_name: name,
-        original_entity_email: email,
-        original_entity_branch: branch || "Head Quarters",
-        original_registration_number: registration_number || null,
-        original_tax_id: tax_id || null,
-        created_from_entity_data: true,
-        ...(totalEntities === 0
-          ? { created_when_no_entities_existed: true }
-          : { created_when_no_all_entities_existed: true }),
-        ...metadata,
-      },
     }).save();
+
+    // Assign new entity to creator
+    if (actor?.uuid) {
+      const user = await User.findOne({ uuid: actor.uuid });
+      if (!user?.entities?.some(e => e.entity_id === entity.uuid)) {
+        await User.findOneAndUpdate(
+          { uuid: actor.uuid },
+          { $push: { entities: { entity_id: entity.uuid, role: actor.role || 'admin', is_primary: false, joined_at: new Date() } } }
+        );
+        const updated = await User.findOne({ uuid: actor.uuid });
+        if (!updated?.primary_entity_id) {
+          await User.findOneAndUpdate({ uuid: actor.uuid }, { $set: { primary_entity_id: entity.uuid } });
+        }
+      }
+    }
 
     await logActivity({
       user_id: actor?._id || actor?.uuid || null,
       user_name: actor?.name || "system",
       user_role: actor?.role || "system",
-      action: "SYSTEM_ENTITY_CREATED",
-      description: `System entity created: All Entities from ${name}`,
+      action: "ENTITY_CREATED",
+      description: `Entity created: ${entity.name}`,
       metadata: {
-        entity_id: allEntities.uuid,
-        entity_name: allEntities.name,
-        original_entity_name: name,
-        original_entity_email: email,
+        entity_id: entity.uuid, entity_name: entity.name, email: entity.email,
+        registration_number: entity.registration_number, tax_id: entity.tax_id,
         created_by: actor?.email || "system",
-        is_system_entity: true,
       },
       req,
       status: "success",
     });
 
-    // Assign "All Entities" to creator
-    if (actor?.uuid) {
-      const user = await User.findOne({ uuid: actor.uuid });
-      const hasIt = user?.entities?.some(e => e.entity_id === "ALL_ENTITIES");
-      if (!hasIt) {
-        await User.findOneAndUpdate(
-          { uuid: actor.uuid },
-          {
-            $push: { entities: { entity_id: allEntities.uuid, role: actor.role || 'admin', is_primary: totalEntities === 0, joined_at: new Date() } },
-            ...(totalEntities === 0 && { $set: { primary_entity_id: allEntities.uuid } }),
-          }
-        );
-      }
-    }
-  }
-
-  // ─── Create the new entity ────────────────────────────────────────────────
-  const entity = await new Entity({
-    name, branch: branch || "Head Quarters",
-    email: email.toLowerCase(),
-    phone, website, address, city, state, country, zip_code,
-    registration_number, tax_id,
-    currency: currency || "GHS",
-    metadata,
-    is_active: true,
-    created_by: actor?.uuid || null,
-    updated_by: actor?.uuid || null,
-  }).save();
-
-  // Assign new entity to creator
-  if (actor?.uuid) {
-    const user = await User.findOne({ uuid: actor.uuid });
-    if (!user?.entities?.some(e => e.entity_id === entity.uuid)) {
-      await User.findOneAndUpdate(
-        { uuid: actor.uuid },
-        { $push: { entities: { entity_id: entity.uuid, role: actor.role || 'admin', is_primary: false, joined_at: new Date() } } }
-      );
-      const updated = await User.findOne({ uuid: actor.uuid });
-      if (!updated?.primary_entity_id) {
-        await User.findOneAndUpdate({ uuid: actor.uuid }, { $set: { primary_entity_id: entity.uuid } });
-      }
-    }
-  }
-
-  await logActivity({
-    user_id: actor?._id || actor?.uuid || null,
-    user_name: actor?.name || "system",
-    user_role: actor?.role || "system",
-    action: "ENTITY_CREATED",
-    description: `Entity created: ${entity.name}`,
-    metadata: {
-      entity_id: entity.uuid, entity_name: entity.name, email: entity.email,
-      registration_number: entity.registration_number, tax_id: entity.tax_id,
-      created_by: actor?.email || "system",
-    },
-    req,
-    status: "success",
-  });
-
-  return this.sanitizeEntity(entity);
-};
+    return this.sanitizeEntity(entity);
+  };
 
   /**
    * Update entity
    */
-updateEntity = async (uuid, updateData, req) => {
+  updateEntity = async (uuid, updateData, req) => {
     const {
       name,
       email,
@@ -235,7 +246,7 @@ updateEntity = async (uuid, updateData, req) => {
       registration_number,
       tax_id,
       branch,
-      currency = {},
+      currency,
       metadata,
       is_active,
     } = updateData;
@@ -315,7 +326,7 @@ updateEntity = async (uuid, updateData, req) => {
     // Save the entity
     await entity.save();
     
-    return entity;
+    return this.sanitizeEntity(entity);
   };
 
   /**
@@ -458,26 +469,26 @@ updateEntity = async (uuid, updateData, req) => {
       User.countDocuments(query),
     ]);
 
+    const userList = users.map((u) => ({
+      uuid: u.uuid,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      entity_role: u.entities.find((e) => e.entity_id === entityUuid)?.role || "member",
+      is_primary: u.entities.find((e) => e.entity_id === entityUuid)?.is_primary || false,
+      joined_at: u.entities.find((e) => e.entity_id === entityUuid)?.joined_at,
+      is_active: u.is_active,
+      verified: u.verified,
+      last_login: u.last_login,
+      created_at: u.created_at,
+    }));
+
     return {
-      users: users.map((u) => ({
-        uuid: u.uuid,
-        name: u.name,
-        email: u.email,
-        role: u.role,
-        entity_role: u.entities.find((e) => e.entity_id === entityUuid)?.role || "member",
-        is_primary: u.entities.find((e) => e.entity_id === entityUuid)?.is_primary || false,
-        joined_at: u.entities.find((e) => e.entity_id === entityUuid)?.joined_at,
-        is_active: u.is_active,
-        verified: u.verified,
-        last_login: u.last_login,
-        created_at: u.created_at,
-      })),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      users: userList,
+      count: total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   };
 
@@ -511,8 +522,14 @@ updateEntity = async (uuid, updateData, req) => {
       total: totalEntities,
       active: activeEntities,
       inactive: inactiveEntities,
-      by_country: entityByCountry,
-      by_branch: entityByBranch,
+      by_country: entityByCountry.map(item => ({
+        country: item._id || 'Unknown',
+        count: item.count || 0
+      })),
+      by_branch: entityByBranch.map(item => ({
+        branch: item._id || 'Unknown',
+        count: item.count || 0
+      })),
     };
   };
 
@@ -537,6 +554,7 @@ updateEntity = async (uuid, updateData, req) => {
       branch: entityObj.branch,
       currency: entityObj.currency || "GHS",
       is_active: entityObj.is_active,
+      is_system_entity: entityObj.is_system_entity || false,
       settings: entityObj.settings || {},
       metadata: entityObj.metadata || {},
       created_at: entityObj.created_at,

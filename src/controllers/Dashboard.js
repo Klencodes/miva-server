@@ -1,4 +1,6 @@
+// controllers/dashboardController.js
 const DashboardService = require('../services/Dashboard');
+const { ApiResponse, ErrorResponse } = require('../utils/response'); // Adjust path as needed
 
 class DashboardController {
   /**
@@ -40,12 +42,8 @@ class DashboardController {
       
       const stats = await DashboardService.getDashboardStats(entityId, filters, req);
       
-      return res.json({
-        message: 'Dashboard statistics retrieved successfully',
-        code: 'DASHBOARD_STATS_FETCH_SUCCESS',
-        success: true,
-        results: stats
-      });
+      const response = new ApiResponse(stats, "Dashboard statistics retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -75,12 +73,8 @@ class DashboardController {
       }
       
       const stats = await DashboardService.getInventoryStats(entityId, filters);
-      return res.json({ 
-        message: 'Inventory statistics retrieved successfully', 
-        code: 'INVENTORY_STATS_FETCH_SUCCESS', 
-        success: true, 
-        results: stats 
-      });
+      const response = new ApiResponse(stats, "Inventory statistics retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -110,12 +104,8 @@ class DashboardController {
       }
       
       const stats = await DashboardService.getInvoiceStats(entityId, filters);
-      return res.json({ 
-        message: 'Invoice statistics retrieved successfully', 
-        code: 'INVOICE_STATS_FETCH_SUCCESS', 
-        success: true, 
-        results: stats 
-      });
+      const response = new ApiResponse(stats, "Invoice statistics retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -145,12 +135,8 @@ class DashboardController {
       }
       
       const sales = await DashboardService.getWeeklySales(entityId, filters);
-      return res.json({ 
-        message: 'Weekly sales retrieved successfully', 
-        code: 'WEEKLY_SALES_FETCH_SUCCESS', 
-        success: true, 
-        results: sales 
-      });
+      const response = new ApiResponse(sales, "Weekly sales retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -180,12 +166,8 @@ class DashboardController {
       }
       
       const items = await DashboardService.getTopSellingItems(entityId, parseInt(limit), filters);
-      return res.json({ 
-        message: 'Top selling items retrieved successfully', 
-        code: 'TOP_SELLING_FETCH_SUCCESS', 
-        success: true, 
-        results: items 
-      });
+      const response = new ApiResponse(items, "Top selling items retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -215,12 +197,8 @@ class DashboardController {
       }
       
       const transactions = await DashboardService.getRecentTransactions(entityId, parseInt(limit), filters);
-      return res.json({ 
-        message: 'Recent transactions retrieved successfully', 
-        code: 'RECENT_TRANSACTIONS_FETCH_SUCCESS', 
-        success: true, 
-        results: transactions 
-      });
+      const response = new ApiResponse(transactions, "Recent transactions retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -250,12 +228,8 @@ class DashboardController {
       }
       
       const revenue = await DashboardService.getMonthlyRevenue(entityId, parseInt(months), filters);
-      return res.json({ 
-        message: 'Monthly revenue retrieved successfully', 
-        code: 'MONTHLY_REVENUE_FETCH_SUCCESS', 
-        success: true, 
-        results: revenue 
-      });
+      const response = new ApiResponse(revenue, "Monthly revenue retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -285,12 +259,8 @@ class DashboardController {
       }
       
       const stats = await DashboardService.getCustomerStats(entityId, filters);
-      return res.json({ 
-        message: 'Customer statistics retrieved successfully', 
-        code: 'CUSTOMER_STATS_FETCH_SUCCESS', 
-        success: true, 
-        results: stats 
-      });
+      const response = new ApiResponse(stats, "Customer statistics retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -316,12 +286,8 @@ class DashboardController {
       }
       
       const types = await DashboardService.getInventoryByType(entityId);
-      return res.json({ 
-        message: 'Inventory by type retrieved successfully', 
-        code: 'INVENTORY_BY_TYPE_FETCH_SUCCESS', 
-        success: true, 
-        results: types 
-      });
+      const response = new ApiResponse(types, "Inventory by type retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -347,12 +313,8 @@ class DashboardController {
       }
       
       const count = await DashboardService.getLowStockCount(entityId);
-      return res.json({ 
-        message: 'Low stock count retrieved successfully', 
-        code: 'LOW_STOCK_COUNT_FETCH_SUCCESS', 
-        success: true, 
-        results: count 
-      });
+      const response = new ApiResponse(count, "Low stock count retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -382,12 +344,8 @@ class DashboardController {
       }
       
       const breakdown = await DashboardService.getInvoiceStatusBreakdown(entityId, filters);
-      return res.json({ 
-        message: 'Invoice status breakdown retrieved successfully', 
-        code: 'INVOICE_STATUS_BREAKDOWN_FETCH_SUCCESS', 
-        success: true, 
-        results: breakdown 
-      });
+      const response = new ApiResponse(breakdown, "Invoice status breakdown retrieved successfully");
+      return res.json(response);
     } catch (error) { 
       return this.handleError(error, res); 
     }
@@ -395,15 +353,18 @@ class DashboardController {
 
   handleError(error, res) {
     console.error('Dashboard Controller Error:', error);
+    
     const errorMap = {
-      'ENTITY_ID_REQUIRED': { status: 400, message: 'Entity ID is required', code: 'ENTITY_ID_REQUIRED' },
+      'ENTITY_ID_REQUIRED': { status: 400, message: 'Entity ID is required' },
     };
-    const errorConfig = errorMap[error.message] || { status: 500, message: error.message || 'Internal server error', code: 'SERVER_ERROR' };
-    return res.status(errorConfig.status).json({ 
-      message: errorConfig.message, 
-      code: errorConfig.code, 
-      success: false 
-    });
+    
+    const errorConfig = errorMap[error.message] || {
+      status: error.status || 500,
+      message: error.message || 'Internal server error'
+    };
+    
+    const errorResponse = new ErrorResponse(errorConfig.message);
+    return res.status(errorConfig.status).json(errorResponse);
   }
 }
 

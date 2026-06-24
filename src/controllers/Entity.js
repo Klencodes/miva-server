@@ -1,5 +1,7 @@
 // controllers/entityController.js
 const EntityService = require("../services/Entity");
+const { ApiResponse, ErrorResponse } = require('../utils/response');
+const Pagination = require('../utils/pagination');
 
 class EntityController {
   /**
@@ -23,12 +25,23 @@ class EntityController {
         parseInt(limit),
       );
 
-      return res.json({
-        message: "Entities retrieved successfully",
-        code: "ENTITIES_FETCH_SUCCESS",
-        success: true,
-        results: result,
-      });
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}${req.path}`;
+      const pagination = Pagination.generatePaginationResponse(
+        result.results,
+        result.count,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query
+      );
+
+      const response = new ApiResponse(
+        result.results,
+        "Entities retrieved successfully",
+        pagination
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -41,15 +54,10 @@ class EntityController {
   getEntity = async (req, res) => {
     try {
       const { uuid } = req.params;
-
       const entity = await EntityService.getEntityByUuid(uuid);
 
-      return res.json({
-        message: "Entity retrieved successfully",
-        code: "ENTITY_FETCH_SUCCESS",
-        success: true,
-        results: entity,
-      });
+      const response = new ApiResponse(entity, "Entity retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -62,15 +70,10 @@ class EntityController {
   getEntityByEmail = async (req, res) => {
     try {
       const { email } = req.params;
-
       const entity = await EntityService.getEntityByEmail(email);
 
-      return res.json({
-        message: "Entity retrieved successfully",
-        code: "ENTITY_FETCH_SUCCESS",
-        success: true,
-        results: entity,
-      });
+      const response = new ApiResponse(entity, "Entity retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -85,12 +88,8 @@ class EntityController {
       const entityData = req.body;
       const entity = await EntityService.createEntity(entityData, req);
 
-      return res.json({
-        message: "Entity created successfully",
-        code: "ENTITY_CREATED_SUCCESS",
-        success: true,
-        results: entity,
-      });
+      const response = new ApiResponse(entity, "Entity created successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -104,15 +103,10 @@ class EntityController {
     try {
       const { uuid } = req.params;
       const updateData = req.body;
-
       const entity = await EntityService.updateEntity(uuid, updateData, req);
 
-      return res.json({
-        message: "Entity updated successfully",
-        code: "ENTITY_UPDATED_SUCCESS",
-        success: true,
-        results: entity,
-      });
+      const response = new ApiResponse(entity, "Entity updated successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -128,23 +122,16 @@ class EntityController {
       const { is_active } = req.body;
 
       if (is_active === undefined) {
-        throw new Error("MISSING_ACTIVE_STATUS");
+        const error = new Error("MISSING_ACTIVE_STATUS");
+        error.status = 400;
+        throw error;
       }
 
-      const entity = await EntityService.toggleEntityActive(
-        uuid,
-        is_active,
-        req,
-      );
+      const entity = await EntityService.toggleEntityActive(uuid, is_active, req);
 
-      return res.json({
-        message: is_active
-          ? "Entity activated successfully"
-          : "Entity deactivated successfully",
-        code: "ENTITY_STATUS_UPDATED",
-        success: true,
-        results: entity,
-      });
+      const message = is_active ? "Entity activated successfully" : "Entity deactivated successfully";
+      const response = new ApiResponse(entity, message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -157,15 +144,10 @@ class EntityController {
   deleteEntity = async (req, res) => {
     try {
       const { uuid } = req.params;
-
       const result = await EntityService.deleteEntity(uuid, req);
 
-      return res.json({
-        message: result.message,
-        code: "ENTITY_DELETED_SUCCESS",
-        success: true,
-        results: { entity: result.entity },
-      });
+      const response = new ApiResponse({ entity: result.entity }, result.message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -178,14 +160,10 @@ class EntityController {
   permanentDeleteEntity = async (req, res) => {
     try {
       const { uuid } = req.params;
-
       const result = await EntityService.permanentlyDeleteEntity(uuid, req);
 
-      return res.json({
-        message: result.message,
-        code: "ENTITY_PERMANENTLY_DELETED",
-        success: true,
-      });
+      const response = new ApiResponse(null, result.message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -206,12 +184,23 @@ class EntityController {
         parseInt(limit),
       );
 
-      return res.json({
-        message: "Entity users retrieved successfully",
-        code: "ENTITY_USERS_FETCH_SUCCESS",
-        success: true,
-        results: result,
-      });
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}${req.path}`;
+      const pagination = Pagination.generatePaginationResponse(
+        result.users,
+        result.count,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query
+      );
+
+      const response = new ApiResponse(
+        result.users,
+        "Entity users retrieved successfully",
+        pagination
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -225,12 +214,8 @@ class EntityController {
     try {
       const stats = await EntityService.getEntityStats();
 
-      return res.json({
-        message: "Entity statistics retrieved successfully",
-        code: "ENTITY_STATS_FETCH_SUCCESS",
-        success: true,
-        results: stats,
-      });
+      const response = new ApiResponse(stats, "Entity statistics retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -243,70 +228,32 @@ class EntityController {
     console.error("Entity Controller Error:", error);
 
     const errorMap = {
-      MISSING_REQUIRED_FIELDS: {
-        status: 400,
-        message: "Name and email are required",
-        code: "MISSING_REQUIRED_FIELDS",
-      },
-      EMAIL_ALREADY_EXISTS: {
-        status: 409,
-        message: "Email already registered",
-        code: "EMAIL_ALREADY_EXISTS",
-      },
-      REGISTRATION_NUMBER_ALREADY_EXISTS: {
-        status: 409,
-        message: "Registration number already exists",
-        code: "REGISTRATION_NUMBER_ALREADY_EXISTS",
-      },
-      TAX_ID_ALREADY_EXISTS: {
-        status: 409,
-        message: "Tax ID already exists",
-        code: "TAX_ID_ALREADY_EXISTS",
-      },
-      ENTITY_NOT_FOUND: {
-        status: 404,
-        message: "Entity not found",
-        code: "ENTITY_NOT_FOUND",
-      },
-      ENTITY_HAS_USERS: {
-        status: 409,
-        message: "Cannot delete entity with assigned users",
-        code: "ENTITY_HAS_USERS",
-      },
-      MISSING_ACTIVE_STATUS: {
-        status: 400,
-        message: "Active status (is_active) is required",
-        code: "MISSING_ACTIVE_STATUS",
-      },
-      INVALID_ENTITY_ID: {
-        status: 400,
-        message: "Invalid entity ID format",
-        code: "INVALID_ENTITY_ID",
-      },
+      MISSING_REQUIRED_FIELDS: { status: 400, message: "Name and email are required" },
+      EMAIL_ALREADY_EXISTS: { status: 409, message: "Email already registered" },
+      REGISTRATION_NUMBER_ALREADY_EXISTS: { status: 409, message: "Registration number already exists" },
+      TAX_ID_ALREADY_EXISTS: { status: 409, message: "Tax ID already exists" },
+      ENTITY_NOT_FOUND: { status: 404, message: "Entity not found" },
+      ENTITY_HAS_USERS: { status: 409, message: "Cannot delete entity with assigned users" },
+      MISSING_ACTIVE_STATUS: { status: 400, message: "Active status (is_active) is required" },
+      INVALID_ENTITY_ID: { status: 400, message: "Invalid entity ID format" },
     };
 
     // Check for MongoDB duplicate key error
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
-      return res.status(409).json({
-        message: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`,
-        code: "DUPLICATE_ENTRY",
-        success: false,
-        field,
-      });
+      const errorResponse = new ErrorResponse(
+        `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`
+      );
+      return res.status(409).json(errorResponse);
     }
 
     const errorConfig = errorMap[error.message] || {
-      status: 500,
-      message: error.message || "Internal server error",
-      code: "SERVER_ERROR",
+      status: error.status || 500,
+      message: error.message || "Internal server error"
     };
 
-    return res.status(errorConfig.status).json({
-      message: errorConfig.message,
-      code: errorConfig.code,
-      success: false,
-    });
+    const errorResponse = new ErrorResponse(errorConfig.message);
+    return res.status(errorConfig.status).json(errorResponse);
   }
 }
 

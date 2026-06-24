@@ -39,12 +39,10 @@ class UserService {
 
     return {
       users: users.map((u) => this.sanitizeUser(u)),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      count: total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   };
 

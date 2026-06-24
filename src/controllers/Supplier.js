@@ -1,4 +1,7 @@
+// controllers/supplierController.js
 const SupplierService = require('../services/Supplier');
+const { ApiResponse, ErrorResponse } = require('../utils/response');
+const Pagination = require('../utils/pagination');
 
 class SupplierController {
   /**
@@ -25,12 +28,23 @@ class SupplierController {
         parseInt(limit)
       );
 
-      return res.json({
-        message: 'Suppliers retrieved successfully',
-        code: 'SUPPLIERS_FETCH_SUCCESS',
-        success: true,
-        results: result,
-      });
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}${req.path}`;
+      const pagination = Pagination.generatePaginationResponse(
+        result.suppliers,
+        result.count,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query
+      );
+
+      const response = new ApiResponse(
+        result.suppliers,
+        "Suppliers retrieved successfully",
+        pagination
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -42,15 +56,10 @@ class SupplierController {
   async getSupplierByUuid(req, res) {
     try {
       const { uuid } = req.params;
-
       const supplier = await SupplierService.getSupplierByUuid(uuid);
 
-      return res.json({
-        message: 'Supplier retrieved successfully',
-        code: 'SUPPLIER_FETCH_SUCCESS',
-        success: true,
-        results: supplier,
-      });
+      const response = new ApiResponse(supplier, "Supplier retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -62,15 +71,10 @@ class SupplierController {
   async createSupplier(req, res) {
     try {
       const data = req.body;
+      const supplier = await SupplierService.createSupplier(data, req);
 
-      const supplier = await SupplierService.createSupplier( data, req);
-
-      return res.json({
-        message: 'Supplier created successfully',
-        code: 'SUPPLIER_CREATED',
-        success: true,
-        results: supplier,
-      });
+      const response = new ApiResponse(supplier, "Supplier created successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -86,12 +90,8 @@ class SupplierController {
 
       const supplier = await SupplierService.updateSupplier(uuid, data, req);
 
-      return res.json({
-        message: 'Supplier updated successfully',
-        code: 'SUPPLIER_UPDATED',
-        success: true,
-        results: supplier,
-      });
+      const response = new ApiResponse(supplier, "Supplier updated successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -103,15 +103,10 @@ class SupplierController {
   async deleteSupplier(req, res) {
     try {
       const { uuid } = req.params;
-
       const result = await SupplierService.deleteSupplier(uuid, req);
 
-      return res.json({
-        message: 'Supplier deleted successfully',
-        code: 'SUPPLIER_DELETED',
-        success: true,
-        results: result,
-      });
+      const response = new ApiResponse(null, result.message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -124,12 +119,8 @@ class SupplierController {
     try {
       const stats = await SupplierService.getSupplierStats();
 
-      return res.json({
-        message: 'Supplier statistics retrieved successfully',
-        code: 'SUPPLIER_STATS_FETCH_SUCCESS',
-        success: true,
-        results: stats,
-      });
+      const response = new ApiResponse(stats, "Supplier statistics retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -143,27 +134,22 @@ class SupplierController {
       const { suppliers } = req.body;
 
       if (!suppliers || !Array.isArray(suppliers) || suppliers.length === 0) {
-        return res.status(400).json({
-          message: 'No suppliers to import',
-          code: 'NO_SUPPLIERS_TO_IMPORT',
-          success: false,
-        });
+        const error = new Error('NO_SUPPLIERS_TO_IMPORT');
+        error.status = 400;
+        throw error;
       }
 
       const result = await SupplierService.bulkImportSuppliers(suppliers, req);
 
-      return res.json({
-        message: 'Suppliers imported successfully',
-        code: 'SUPPLIERS_IMPORTED',
-        success: true,
-        results: result,
-      });
+      const response = new ApiResponse(result, "Suppliers imported successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
   }
 
   handleError(error, res) {
+    console.error('Supplier Controller Error:', error);
 
     const errorMap = {
       SUPPLIER_NOT_FOUND: { status: 404, message: 'Supplier not found' },
@@ -174,22 +160,33 @@ class SupplierController {
       EMAIL_ALREADY_EXISTS: { status: 409, message: 'Email already exists' },
       TAX_ID_ALREADY_EXISTS: { status: 409, message: 'Tax ID already exists' },
       REGISTRATION_NUMBER_ALREADY_EXISTS: { status: 409, message: 'Registration number already exists' },
+      NO_SUPPLIERS_TO_IMPORT: { status: 400, message: 'No suppliers to import' },
     };
+
+    // Check for MongoDB duplicate key error
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      const errorResponse = new ErrorResponse(
+        `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`
+      );
+      return res.status(409).json(errorResponse);
+    }
+
+    // Check for validation error
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(err => err.message);
+      const errorResponse = new ErrorResponse('Validation error: ' + messages.join(', '));
+      return res.status(400).json(errorResponse);
+    }
 
     const errorInfo = errorMap[error.message];
     if (errorInfo) {
-      return res.status(errorInfo.status).json({
-        message: errorInfo.message,
-        code: error.message,
-        success: false,
-      });
+      const errorResponse = new ErrorResponse(errorInfo.message);
+      return res.status(errorInfo.status).json(errorResponse);
     }
 
-    return res.status(500).json({
-      message: error.message || 'Internal server error',
-      code: 'INTERNAL_SERVER_ERROR',
-      success: false,
-    });
+    const errorResponse = new ErrorResponse(error.message || 'Internal server error');
+    return res.status(500).json(errorResponse);
   }
 }
 

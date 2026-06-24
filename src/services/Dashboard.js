@@ -4,6 +4,14 @@ const { logActivity, ActivityActions } = require('../utils/ActivityLogger');
 
 class DashboardService {
   /**
+   * Format number to 2 decimal places
+   */
+  formatCurrency(value) {
+    if (value === undefined || value === null || isNaN(value)) return 0;
+    return Math.round(value * 100) / 100;
+  }
+
+  /**
    * Build a MongoDB entity match object from an entityId string.
    * Returns {} when entityId is null (= all entities).
    */
@@ -122,13 +130,23 @@ class DashboardService {
       },
     ]);
 
-    return stats[0] || {
+    const result = stats[0] || {
       total_items: 0,
       total_quantity: 0,
       total_value: 0,
       total_price: 0,
       avg_cost: 0,
       avg_price: 0,
+    };
+
+    // Format currency values
+    return {
+      total_items: result.total_items || 0,
+      total_quantity: result.total_quantity || 0,
+      total_value: this.formatCurrency(result.total_value || 0),
+      total_price: this.formatCurrency(result.total_price || 0),
+      avg_cost: this.formatCurrency(result.avg_cost || 0),
+      avg_price: this.formatCurrency(result.avg_price || 0),
     };
   }
 
@@ -152,11 +170,18 @@ class DashboardService {
       },
     ]);
 
-    return stats[0] || {
+    const result = stats[0] || {
       total_invoices: 0,
       total_amount: 0,
       total_paid: 0,
       total_remaining: 0,
+    };
+
+    return {
+      total_invoices: result.total_invoices || 0,
+      total_amount: this.formatCurrency(result.total_amount || 0),
+      total_paid: this.formatCurrency(result.total_paid || 0),
+      total_remaining: this.formatCurrency(result.total_remaining || 0),
     };
   }
 
@@ -191,8 +216,8 @@ class DashboardService {
     breakdown.forEach(item => {
       if (result[item._id] !== undefined) {
         result[item._id] = {
-          count:  item.count,
-          amount: item.amount || 0,
+          count:  item.count || 0,
+          amount: this.formatCurrency(item.amount || 0),
         };
       }
     });
@@ -216,7 +241,7 @@ class DashboardService {
       id:          inv.uuid,
       type:        'invoice',
       description: `Invoice ${inv.number} - ${inv.customer?.name || 'Unknown Customer'}`,
-      amount:      inv.total,
+      amount:      this.formatCurrency(inv.total || 0),
       date:        inv.created_at,
       status:      inv.status,
       reference:   inv.number,
@@ -245,7 +270,7 @@ class DashboardService {
             id:          payment.payment_id || `pay-${Date.now()}`,
             type:        'payment',
             description: `Payment for ${inv.number} - ${inv.customer?.name || 'Unknown Customer'}`,
-            amount:      payment.amount,
+            amount:      this.formatCurrency(payment.amount || 0),
             date:        paymentDate,
             status:      'completed',
             reference:   payment.reference || '',
@@ -303,7 +328,7 @@ class DashboardService {
 
       result.push({
         day:    dayName,
-        amount: daySales?.amount || 0,
+        amount: this.formatCurrency(daySales?.amount || 0),
         count:  daySales?.count  || 0,
       });
     }
@@ -337,7 +362,7 @@ class DashboardService {
       id:       item._id,
       name:     item.name     || 'Unknown Item',
       quantity: item.quantity || 0,
-      revenue:  item.revenue  || 0,
+      revenue:  this.formatCurrency(item.revenue || 0),
     }));
   }
 
@@ -363,7 +388,7 @@ class DashboardService {
       name:     item._id ? item._id.charAt(0).toUpperCase() + item._id.slice(1) : 'Unknown',
       count:    item.count    || 0,
       quantity: item.quantity || 0,
-      value:    item.value    || 0,
+      value:    this.formatCurrency(item.value || 0),
     }));
   }
 
@@ -434,7 +459,7 @@ class DashboardService {
 
     return revenue.map(item => ({
       month:  `${monthNames[item._id.month - 1]} ${item._id.year}`,
-      amount: item.amount || 0,
+      amount: this.formatCurrency(item.amount || 0),
       count:  item.count  || 0,
     }));
   }
@@ -462,10 +487,11 @@ class DashboardService {
 
     return stats.map(item => ({
       name:          item._id || 'Unknown Customer',
-      total_spent:   item.total_spent   || 0,
+      total_spent:   this.formatCurrency(item.total_spent || 0),
       invoice_count: item.invoice_count || 0,
       last_invoice:  item.last_invoice,
     }));
   }
 }
+
 module.exports = new DashboardService();

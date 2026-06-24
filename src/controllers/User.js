@@ -1,6 +1,9 @@
-// controllers/userController.js
 const UserService = require("../services/User");
-const { User } = require("../models/User")
+const { User } = require("../models/User");
+const Entity = require("../models/Entity");
+const { ApiResponse, ErrorResponse } = require("../utils/response");
+const Pagination = require("../utils/pagination");
+
 class UserController {
   /**
    * GET /api/users
@@ -16,12 +19,23 @@ class UserController {
         parseInt(limit),
       );
 
-      return res.json({
-        message: "Users retrieved successfully",
-        code: "USERS_FETCH_SUCCESS",
-        success: true,
-        results: result,
-      });
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get("host")}${req.baseUrl}${req.path}`;
+      const pagination = Pagination.generatePaginationResponse(
+        result.users,
+        result.count,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query,
+      );
+
+      const response = new ApiResponse(
+        result.users,
+        "Users retrieved successfully",
+        pagination,
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -34,15 +48,10 @@ class UserController {
   getUser = async (req, res) => {
     try {
       const { uuid } = req.params;
-
       const user = await UserService.getUserByUuid(uuid);
 
-      return res.json({
-        message: "User retrieved successfully",
-        code: "USER_FETCH_SUCCESS",
-        success: true,
-        results: user,
-      });
+      const response = new ApiResponse(user, "User retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -55,15 +64,10 @@ class UserController {
   createUser = async (req, res) => {
     try {
       const userData = req.body;
-
       const user = await UserService.createUser(userData, req);
 
-      return res.json({
-        message: "User created successfully",
-        code: "USER_CREATED_SUCCESS",
-        success: true,
-        results: user,
-      });
+      const response = new ApiResponse(user, "User created successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -80,12 +84,8 @@ class UserController {
 
       const user = await UserService.updateUser(uuid, updateData, req);
 
-      return res.json({
-        message: "User updated successfully",
-        code: "USER_UPDATED_SUCCESS",
-        success: true,
-        results: user ,
-      });
+      const response = new ApiResponse(user, "User updated successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -101,19 +101,18 @@ class UserController {
       const { is_active } = req.body;
 
       if (is_active === undefined) {
-        throw new Error("MISSING_ACTIVE_STATUS");
+        const error = new Error("MISSING_ACTIVE_STATUS");
+        error.status = 400;
+        throw error;
       }
 
       const user = await UserService.toggleUserActive(uuid, is_active, req);
 
-      return res.json({
-        message: is_active
-          ? "User activated successfully"
-          : "User deactivated successfully",
-        code: "USER_STATUS_UPDATED",
-        success: true,
-        results: user,
-      });
+      const message = is_active
+        ? "User activated successfully"
+        : "User deactivated successfully";
+      const response = new ApiResponse(user, message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -126,15 +125,10 @@ class UserController {
   deleteUser = async (req, res) => {
     try {
       const { uuid } = req.params;
-
       const result = await UserService.deleteUser(uuid, req);
 
-      return res.json({
-        message: result.message,
-        code: "USER_DELETED_SUCCESS",
-        success: true,
-        results: { user: result.user },
-      });
+      const response = new ApiResponse({ user: result.user }, result.message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -147,14 +141,10 @@ class UserController {
   permanentDeleteUser = async (req, res) => {
     try {
       const { uuid } = req.params;
-
       const result = await UserService.permanentlyDeleteUser(uuid, req);
 
-      return res.json({
-        message: result.message,
-        code: "USER_PERMANENTLY_DELETED",
-        success: true,
-      });
+      const response = new ApiResponse(null, result.message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -169,9 +159,10 @@ class UserController {
       const { uuid } = req.params;
       const { new_password, confirm_password } = req.body;
 
-      // Validate input
       if (!new_password || !confirm_password) {
-        throw new Error("MISSING_FIELDS");
+        const error = new Error("MISSING_FIELDS");
+        error.status = 400;
+        throw error;
       }
 
       const result = await UserService.updateUserPassword(
@@ -181,11 +172,8 @@ class UserController {
         req,
       );
 
-      return res.json({
-        message: result.message,
-        code: "PASSWORD_UPDATED_SUCCESS",
-        success: true,
-      });
+      const response = new ApiResponse(null, result.message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -201,7 +189,9 @@ class UserController {
       const { entity_id, role = "member", is_primary = false } = req.body;
 
       if (!entity_id) {
-        throw new Error("ENTITY_ID_REQUIRED");
+        const error = new Error("ENTITY_ID_REQUIRED");
+        error.status = 400;
+        throw error;
       }
 
       const user = await UserService.assignEntityToUser(
@@ -212,12 +202,8 @@ class UserController {
         req,
       );
 
-      return res.json({
-        message: "Entity assigned successfully",
-        code: "ENTITY_ASSIGNED_SUCCESS",
-        success: true,
-        results: user,
-      });
+      const response = new ApiResponse(user, "Entity assigned successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -226,19 +212,6 @@ class UserController {
   /**
    * POST /api/users/:uuid/entities/batch
    * Assign multiple entities to user
-{
-  "entities": [
-    {
-      "entity_id": "entity-uuid-1",
-      "role": "admin",
-      "is_primary": true
-    },
-    {
-      "entity_id": "entity-uuid-2",
-      "role": "sales"
-    }
-  ]
-}
    */
   assignMultipleEntitiesToUser = async (req, res) => {
     try {
@@ -246,7 +219,9 @@ class UserController {
       const { entities } = req.body;
 
       if (!entities || !Array.isArray(entities) || entities.length === 0) {
-        throw new Error("ENTITIES_ARRAY_REQUIRED");
+        const error = new Error("ENTITIES_ARRAY_REQUIRED");
+        error.status = 400;
+        throw error;
       }
 
       const user = await UserService.assignMultipleEntitiesToUser(
@@ -255,12 +230,8 @@ class UserController {
         req,
       );
 
-      return res.json({
-        message: "Entities assigned successfully",
-        code: "ENTITIES_ASSIGNED_SUCCESS",
-        success: true,
-        results: user,
-      });
+      const response = new ApiResponse(user, "Entities assigned successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -276,12 +247,8 @@ class UserController {
 
       const user = await UserService.removeEntityFromUser(uuid, entity_id, req);
 
-      return res.json({
-        message: "Entity removed successfully",
-        code: "ENTITY_REMOVED_SUCCESS",
-        success: true,
-        results: user,
-      });
+      const response = new ApiResponse(user, "Entity removed successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -297,12 +264,11 @@ class UserController {
 
       const user = await UserService.setPrimaryEntity(uuid, entity_id, req);
 
-      return res.json({
-        message: "Primary entity updated successfully",
-        code: "PRIMARY_ENTITY_UPDATED",
-        success: true,
-        results: user,
-      });
+      const response = new ApiResponse(
+        user,
+        "Primary entity updated successfully",
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -310,62 +276,121 @@ class UserController {
 
   /**
    * GET /api/users/me/entities
-   * Get current user's entities
+   * Get current user's entities with pagination
    */
- getMyEntities = async (req, res) => {
-  try {
-    if (!req.user) throw new Error("UNAUTHORIZED");
+  getMyEntities = async (req, res) => {
+    try {
+      if (!req.user) {
+        const error = new Error("UNAUTHORIZED");
+        error.status = 401;
+        throw error;
+      }
 
-    const user = await User.findOne({ uuid: req.user.uuid })
-      .select("entities primary_entity_id");
+      const { page = 1, limit = 10, search } = req.query;
 
-    if (!user) throw new Error("USER_NOT_FOUND");
+      const user = await User.findOne({ uuid: req.user.uuid }).select(
+        "entities primary_entity_id",
+      );
 
-    // Populate with actual entity data
-    const Entity = require('../models/Entity');
-    const entityIds = user.entities.map(e => e.entity_id);
-    const entityDocs = await Entity.find({ 
-      uuid: { $in: entityIds }, 
-      is_active: true 
-    });
+      if (!user) {
+        const error = new Error("USER_NOT_FOUND");
+        error.status = 404;
+        throw error;
+      }
 
-    const entities = entityDocs.map(doc => {
-      const assignment = user.entities.find(e => e.entity_id === doc.uuid);
-      return {
-        uuid: doc.uuid,
-        name: doc.name,
-        email: doc.email,
-        phone: doc.phone,
-        branch: doc.branch,
-        website: doc.website,
-        address: doc.address,
-        city: doc.city,
-        state: doc.state,
-        country: doc.country,
-        zip_code: doc.zip_code,
-        registration_number: doc.registration_number,
-        tax_id: doc.tax_id,
-        currency: doc.currency,
-        metadata: doc.metadata,
-        is_active: doc.is_active,
-        entity_role: assignment?.role || 'member',
-        is_primary: assignment?.is_primary || false,
-        joined_at: assignment?.joined_at,
+      // Get all entity IDs from user
+      const entityIds = user.entities.map((e) => e.entity_id);
+
+      if (entityIds.length === 0) {
+        const response = new ApiResponse(
+          [],
+          "User entities retrieved successfully",
+        );
+        // Add primary_entity_id to the response
+        response.primary_entity_id = user.primary_entity_id;
+        response.count = 0;
+        response.totalPages = 0;
+        response.currentPage = parseInt(page);
+        return res.json(response);
+      }
+
+      // Build query for entities
+      const query = {
+        uuid: { $in: entityIds },
+        is_active: true,
       };
-    });
 
-    return res.json({
-      message: "User entities retrieved successfully",
-      code: "USER_ENTITIES_FETCH_SUCCESS",
-      success: true,
-      results: { entities, primary_entity_id: user.primary_entity_id }
-    });
-  } catch (error) {
-    return this.handleError(error, res);
-  }
-};
-  
+      // Apply search filter if provided
+      if (search) {
+        query.$or = [
+          { name: { $regex: search, $options: "i" } },
+          { email: { $regex: search, $options: "i" } },
+          { branch: { $regex: search, $options: "i" } },
+          { city: { $regex: search, $options: "i" } },
+          { country: { $regex: search, $options: "i" } },
+        ];
+      }
 
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      // Get paginated entities
+      const [entityDocs, total] = await Promise.all([
+        Entity.find(query).sort({ name: 1 }).skip(skip).limit(parseInt(limit)),
+        Entity.countDocuments(query),
+      ]);
+
+      // Format entities with user-specific data
+      const entities = entityDocs.map((doc) => {
+        const assignment = user.entities.find((e) => e.entity_id === doc.uuid);
+        return {
+          uuid: doc.uuid,
+          name: doc.name,
+          email: doc.email,
+          phone: doc.phone,
+          branch: doc.branch,
+          website: doc.website,
+          address: doc.address,
+          city: doc.city,
+          state: doc.state,
+          country: doc.country,
+          zip_code: doc.zip_code,
+          registration_number: doc.registration_number,
+          tax_id: doc.tax_id,
+          currency: doc.currency,
+          metadata: doc.metadata,
+          is_active: doc.is_active,
+          entity_role: assignment?.role || "member",
+          is_primary: assignment?.is_primary || false,
+          joined_at: assignment?.joined_at,
+        };
+      });
+
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get("host")}${req.baseUrl}${req.path}`;
+      const pagination = Pagination.generatePaginationResponse(
+        entities,
+        total,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query,
+      );
+
+      // Create response with entities as results
+      const response = new ApiResponse(
+        entities,
+        "User entities retrieved successfully",
+        pagination,
+      );
+
+      // Add primary_entity_id to the response at root level
+      response.primary_entity_id = user.primary_entity_id;
+
+      return res.json(response);
+    } catch (error) {
+      return this.handleError(error, res);
+    }
+  };
   /**
    * GET /api/users/me/permissions
    * Get current user's permissions
@@ -373,16 +398,15 @@ class UserController {
   getMyPermissions = async (req, res) => {
     try {
       if (!req.user) {
-        throw new Error("UNAUTHORIZED");
+        const error = new Error("UNAUTHORIZED");
+        error.status = 401;
+        throw error;
       }
 
       const user = await UserService.getUserByUuid(req.user.uuid);
 
-      return res.json({
-        message: "User permissions retrieved successfully",
-        code: "USER_PERMISSIONS_FETCH_SUCCESS",
-        success: true,
-        results: {
+      const response = new ApiResponse(
+        {
           role: user.role,
           permissions: user.permissions || {},
           permissions_array: user.permissions
@@ -391,7 +415,9 @@ class UserController {
               )
             : [],
         },
-      });
+        "User permissions retrieved successfully",
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -407,138 +433,80 @@ class UserController {
       MISSING_REQUIRED_FIELDS: {
         status: 400,
         message: "Name, email, password, and confirm password are required",
-        code: "MISSING_REQUIRED_FIELDS",
       },
-      PASSWORD_MISMATCH: {
-        status: 400,
-        message: "Passwords do not match",
-        code: "PASSWORD_MISMATCH",
-      },
+      PASSWORD_MISMATCH: { status: 400, message: "Passwords do not match" },
       PASSWORD_TOO_SHORT: {
         status: 400,
         message: "Password must be at least 8 characters long",
-        code: "PASSWORD_TOO_SHORT",
       },
       EMAIL_ALREADY_EXISTS: {
         status: 409,
         message: "Email already registered",
-        code: "EMAIL_ALREADY_EXISTS",
       },
-      USER_NOT_FOUND: {
-        status: 404,
-        message: "User not found",
-        code: "USER_NOT_FOUND",
-      },
-      INVALID_ROLE: {
-        status: 400,
-        message: "Invalid role specified",
-        code: "INVALID_ROLE",
-      },
+      USER_NOT_FOUND: { status: 404, message: "User not found" },
+      INVALID_ROLE: { status: 400, message: "Invalid role specified" },
       MISSING_ACTIVE_STATUS: {
         status: 400,
         message: "Active status (is_active) is required",
-        code: "MISSING_ACTIVE_STATUS",
       },
       CANNOT_DELETE_SELF: {
         status: 403,
         message: "You cannot delete your own account",
-        code: "CANNOT_DELETE_SELF",
       },
       CANNOT_DEACTIVATE_SELF: {
         status: 403,
         message: "You cannot deactivate your own account",
-        code: "CANNOT_DEACTIVATE_SELF",
       },
-      ENTITY_ID_REQUIRED: {
-        status: 400,
-        message: "Entity ID is required",
-        code: "ENTITY_ID_REQUIRED",
-      },
+      ENTITY_ID_REQUIRED: { status: 400, message: "Entity ID is required" },
       ENTITIES_ARRAY_REQUIRED: {
         status: 400,
         message: "Entities array is required with at least one entity",
-        code: "ENTITIES_ARRAY_REQUIRED",
       },
-      ENTITY_NOT_FOUND: {
-        status: 404,
-        message: "Entity not found",
-        code: "ENTITY_NOT_FOUND",
-      },
+      ENTITY_NOT_FOUND: { status: 404, message: "Entity not found" },
       ENTITY_ALREADY_ASSIGNED: {
         status: 409,
         message: "Entity is already assigned to this user",
-        code: "ENTITY_ALREADY_ASSIGNED",
       },
       MISSING_FIELDS: {
         status: 400,
         message: "New password and confirm password are required",
-        code: "MISSING_FIELDS",
       },
-      UNAUTHORIZED: {
-        status: 401,
-        message: "Authentication required",
-        code: "UNAUTHORIZED",
-      },
+      UNAUTHORIZED: { status: 401, message: "Authentication required" },
       FORBIDDEN: {
         status: 403,
         message: "You do not have permission to perform this action",
-        code: "FORBIDDEN",
       },
-      INVALID_ENTITY_ID: {
-        status: 400,
-        message: "Invalid entity ID format",
-        code: "INVALID_ENTITY_ID",
-      },
-      PERMISSION_DENIED: {
-        status: 403,
-        message: "Insufficient permissions",
-        code: "PERMISSION_DENIED",
-      },
-      VALIDATION_ERROR: {
-        status: 400,
-        message: "Validation error occurred",
-        code: "VALIDATION_ERROR",
-      },
-      DATABASE_ERROR: {
-        status: 500,
-        message: "Database operation failed",
-        code: "DATABASE_ERROR",
-      },
+      INVALID_ENTITY_ID: { status: 400, message: "Invalid entity ID format" },
+      PERMISSION_DENIED: { status: 403, message: "Insufficient permissions" },
+      VALIDATION_ERROR: { status: 400, message: "Validation error occurred" },
+      DATABASE_ERROR: { status: 500, message: "Database operation failed" },
     };
 
     // Handle mongoose validation errors
     if (error.name === "ValidationError") {
       const messages = Object.values(error.errors).map((err) => err.message);
-      return res.status(400).json({
-        message: "Validation error: " + messages.join(", "),
-        code: "VALIDATION_ERROR",
-        success: false,
-        errors: messages,
-      });
+      const errorResponse = new ErrorResponse(
+        "Validation error: " + messages.join(", "),
+      );
+      return res.status(400).json(errorResponse);
     }
 
     // Handle duplicate key errors (MongoDB)
     if (error.code === 11000) {
       const field = Object.keys(error.keyPattern)[0];
-      return res.status(409).json({
-        message: `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`,
-        code: "DUPLICATE_FIELD",
-        success: false,
-        field: field,
-      });
+      const errorResponse = new ErrorResponse(
+        `${field.charAt(0).toUpperCase() + field.slice(1)} already exists`,
+      );
+      return res.status(409).json(errorResponse);
     }
 
     const errorConfig = errorMap[error.message] || {
-      status: 500,
+      status: error.status || 500,
       message: error.message || "Internal server error",
-      code: "SERVER_ERROR",
     };
 
-    return res.status(errorConfig.status).json({
-      message: errorConfig.message,
-      code: errorConfig.code,
-      success: false,
-    });
+    const errorResponse = new ErrorResponse(errorConfig.message);
+    return res.status(errorConfig.status).json(errorResponse);
   }
 }
 

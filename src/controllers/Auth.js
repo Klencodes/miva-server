@@ -4,6 +4,8 @@ const OTPService = require('../services/OTP');
 const { User } = require("../models/User");
 const { logActivity } = require("../utils/ActivityLogger");
 const { ActivityActions } = require("../models/ActivityLog");
+const { ApiResponse, ErrorResponse } = require('../utils/response'); 
+
 class AuthController {
   /**
    * GET /api/auth/check-users
@@ -12,16 +14,11 @@ class AuthController {
   checkUsers = async (req, res) => {
     try {
       const result = await AuthService.checkAnyUserExists();
-
-      return res.json({
-        message: result.exists ? "Users exist in the system" : "No users found in the system",
-        code: "USER_CHECK_SUCCESS",
-        success: true,
-        results: {
-          exists: result.exists,
-          count: result.count
-        }
-      });
+      const response = new ApiResponse(
+        { exists: result.exists, count: result.count },
+        result.exists ? "Users exist in the system" : "No users found in the system"
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -34,21 +31,16 @@ class AuthController {
   createAdmin = async (req, res) => {
     try {
       const adminData = req.body;
-
-      // Create admin
       const admin = await AuthService.createAdminAccount(adminData, req);
-
+      
       // Send OTP for verification
       await OTPService.sendOTP(admin.email, "verification", req);
 
-      return res.json({
-        message: "Admin account created. Please verify your email.",
-        code: "ADMIN_CREATED",
-        success: true,
-        results: {
-          ...admin,
-        },
-      });
+      const response = new ApiResponse(
+        admin,
+        "Admin account created. Please verify your email."
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -58,16 +50,14 @@ class AuthController {
    * POST /api/auth/login
    * Authenticate user and return JWT token
    */
-    login = async (req, res) => {
+  login = async (req, res) => {
     try {
       const { email, password } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({
-          message: "Email and password are required",
-          code: "MISSING_CREDENTIALS",
-          success: false,
-        });
+        const error = new Error('MISSING_CREDENTIALS');
+        error.status = 400;
+        throw error;
       }
 
       // Attempt login
@@ -79,23 +69,19 @@ class AuthController {
       if (user && !user.verified) {
         // Send OTP for verification
         await OTPService.sendOTP(email, "verification", req);
-
-        return res.json({
-          message: "Please verify your email. A code has been sent.",
-          code: "EMAIL_NOT_VERIFIED",
-          success: true,
-          results: {
-            ...user
-          },
-        });
+        
+        const response = new ApiResponse(
+          user,
+          "Please verify your email. A code has been sent."
+        );
+        return res.json(response);
       }
 
-      return res.json({
-        message: "Login successful",
-        code: "LOGIN_SUCCESS",
-        success: true,
-        results: loginResult,
-      });
+      const response = new ApiResponse(
+        loginResult,
+        "Login successful"
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -108,12 +94,8 @@ class AuthController {
   logout = async (req, res) => {
     try {
       await AuthService.logout(req.user, req);
-
-      return res.json({
-        message: "Logged out successfully",
-        code: "LOGOUT_SUCCESS",
-        success: true
-      });
+      const response = new ApiResponse(null, "Logged out successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -128,34 +110,27 @@ class AuthController {
       const { email } = req.body;
 
       if (!email) {
-        return res.status(400).json({
-          message: "Email is required",
-          code: "MISSING_EMAIL",
-          success: false,
-        });
+        const error = new Error('MISSING_EMAIL');
+        error.status = 400;
+        throw error;
       }
 
       // Check if user exists
       const user = await User.findOne({ email: email.toLowerCase() });
       if (!user) {
-        return res.status(404).json({
-          message: "User not found",
-          code: "USER_NOT_FOUND",
-          success: false,
-        });
+        const error = new Error('USER_NOT_FOUND');
+        error.status = 404;
+        throw error;
       }
 
       // Send OTP for password reset
       await OTPService.sendOTP(email, "password_reset", req);
 
-      return res.json({
-        message: "Password reset code sent to your email",
-        code: "PASSWORD_RESET_OTP_SENT",
-        success: true,
-        results: {
-          email,
-        },
-      });
+      const response = new ApiResponse(
+        { email },
+        "Password reset code sent to your email"
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -176,12 +151,11 @@ class AuthController {
         req
       );
 
-      return res.json({
-        message: "Password has been reset successfully",
-        code: "RESET_PASSWORD_SUCCESS",
-        success: true,
-        results: result
-      });
+      const response = new ApiResponse(
+        result,
+        "Password has been reset successfully"
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -203,11 +177,8 @@ class AuthController {
         req
       );
 
-      return res.json({
-        message: "Password changed successfully",
-        code: "CHANGE_PASSWORD_SUCCESS",
-        success: true
-      });
+      const response = new ApiResponse(null, "Password changed successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -220,19 +191,12 @@ class AuthController {
   getCurrentUser = async (req, res) => {
     try {
       const user = await AuthService.getCurrentUser(req.user.uuid);
-
-      return res.json({
-        message: "User fetched successfully",
-        code: "USER_FETCH_SUCCESS",
-        success: true,
-        results: { user }
-      });
+      const response = new ApiResponse({ user }, "User fetched successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
   };
-
-
 
   // __________________________________________________________________________________________
   // OTP CONTROLLERS
@@ -246,82 +210,71 @@ class AuthController {
       const { email, type = "verification" } = req.body;
 
       if (!email) {
-        return res.status(400).json({
-          message: "Email is required",
-          code: "MISSING_EMAIL",
-          success: false,
-        });
+        const error = new Error('MISSING_EMAIL');
+        error.status = 400;
+        throw error;
       }
 
       // Validate type
       const validTypes = ["verification", "login", "password_reset"];
       if (!validTypes.includes(type)) {
-        return res.status(400).json({
-          message: "Invalid OTP type",
-          code: "INVALID_OTP_TYPE",
-          success: false,
-        });
+        const error = new Error('INVALID_OTP_TYPE');
+        error.status = 400;
+        throw error;
       }
 
       // Check if user exists for password_reset
       if (type === "password_reset") {
         const user = await User.findOne({ email: email.toLowerCase() });
         if (!user) {
-          return res.status(404).json({
-            message: "User not found with this email",
-            code: "USER_NOT_FOUND",
-            success: false,
-          });
+          const error = new Error('USER_NOT_FOUND');
+          error.status = 404;
+          throw error;
         }
       }
 
       // Send OTP
       const result = await OTPService.sendOTP(email, type, req);
 
-      return res.json({
-        message: `Verification code sent to ${email}`,
-        code: "OTP_SENT",
-        success: true,
-        results: {
+      const response = new ApiResponse(
+        {
           email,
           type,
           expires_at: result.expires_at,
           email_sent: result.email_sent,
         },
-      });
+        `Verification code sent to ${email}`
+      );
+      return res.json(response);
     } catch (error) {
       console.error("Send OTP error:", error);
-      return res.status(500).json({
-        message: "Failed to send verification code",
-        code: "OTP_SEND_FAILED",
-        success: false,
-      });
+      if (error.status && error.message) {
+        return this.handleError(error, res);
+      }
+      const errorResponse = new ErrorResponse("Failed to send verification code");
+      return res.status(500).json(errorResponse);
     }
   };
 
   /**
    * Verify OTP
    */
-verifyOTP = async (req, res) => {
+  verifyOTP = async (req, res) => {
     try {
       const { email, otp, type = "verification" } = req.body;
 
       if (!email || !otp) {
-        return res.status(400).json({
-          message: "Email and OTP are required",
-          code: "MISSING_OTP_FIELDS",
-          success: false,
-        });
+        const error = new Error('MISSING_OTP_FIELDS');
+        error.status = 400;
+        throw error;
       }
 
       const result = await OTPService.verifyOTP(email, otp, type);
 
       if (!result.success) {
-        return res.status(400).json({
-          message: result.message,
-          code: result.error,
-          success: false,
-        });
+        const error = new Error(result.error || 'OTP_VERIFICATION_FAILED');
+        error.status = 400;
+        throw error;
       }
 
       // Get user
@@ -329,11 +282,9 @@ verifyOTP = async (req, res) => {
         .select("-password -reset_password_token -reset_password_expires");
 
       if (!user) {
-        return res.status(404).json({
-          message: "User not found",
-          code: "USER_NOT_FOUND",
-          success: false,
-        });
+        const error = new Error('USER_NOT_FOUND');
+        error.status = 404;
+        throw error;
       }
 
       // Mark as verified if verification type
@@ -372,25 +323,21 @@ verifyOTP = async (req, res) => {
         primary_entity_id: user.primary_entity_id,
         created_at: user.created_at,
         updated_at: user.updated_at,
+        auth_token: token,
       };
 
-      return res.json({
-        message: "OTP verified successfully",
-        code: "OTP_VERIFIED",
-        success: true,
-        results: {
-          ...sanitizedUser,
-          auth_token: token,
-          verified: true,
-        },
-      });
+      const response = new ApiResponse(
+        sanitizedUser,
+        "OTP verified successfully"
+      );
+      return res.json(response);
     } catch (error) {
       console.error("Verify OTP error:", error);
-      return res.status(500).json({
-        message: "Failed to verify OTP",
-        code: "OTP_VERIFY_FAILED",
-        success: false,
-      });
+      if (error.status && error.message) {
+        return this.handleError(error, res);
+      }
+      const errorResponse = new ErrorResponse("Failed to verify OTP");
+      return res.status(500).json(errorResponse);
     }
   };
 
@@ -402,45 +349,37 @@ verifyOTP = async (req, res) => {
       const { email, type = "verification" } = req.body;
 
       if (!email) {
-        return res.status(400).json({
-          message: "Email is required",
-          code: "MISSING_EMAIL",
-          success: false,
-        });
+        const error = new Error('MISSING_EMAIL');
+        error.status = 400;
+        throw error;
       }
 
       const result = await OTPService.resendOTP(email, type, req);
 
       if (!result.success) {
-        return res.status(400).json({
-          message: result.message,
-          code: result.error,
-          success: false,
-          wait_seconds: result.wait_seconds,
-        });
+        const error = new Error(result.error || 'OTP_RESEND_FAILED');
+        error.status = 400;
+        throw error;
       }
 
-      return res.json({
-        message: "New verification code sent",
-        code: "OTP_RESENT",
-        success: true,
-        results: {
+      const response = new ApiResponse(
+        {
           email,
           type,
           expires_at: result.expires_at,
         },
-      });
+        "New verification code sent"
+      );
+      return res.json(response);
     } catch (error) {
       console.error("Resend OTP error:", error);
-      return res.status(500).json({
-        message: "Failed to resend verification code",
-        code: "OTP_RESEND_FAILED",
-        success: false,
-      });
+      if (error.status && error.message) {
+        return this.handleError(error, res);
+      }
+      const errorResponse = new ErrorResponse("Failed to resend verification code");
+      return res.status(500).json(errorResponse);
     }
   };
-
-
 
   /**
    * Handle errors and return appropriate response
@@ -451,82 +390,81 @@ verifyOTP = async (req, res) => {
     const errorMap = {
       'MISSING_ADMIN_FIELDS': {
         status: 400,
-        message: 'Name, email, password, and confirm password are required',
-        code: 'MISSING_ADMIN_FIELDS'
+        message: 'Name, email, password, and confirm password are required'
       },
       'ADMIN_ALREADY_EXISTS': {
         status: 409,
-        message: 'An admin account already exists',
-        code: 'ADMIN_ALREADY_EXISTS'
+        message: 'An admin account already exists'
       },
       'EMAIL_ALREADY_EXISTS': {
         status: 409,
-        message: 'Email already registered',
-        code: 'EMAIL_ALREADY_EXISTS'
+        message: 'Email already registered'
       },
       'MISSING_CREDENTIALS': {
         status: 400,
-        message: 'Email and password are required',
-        code: 'MISSING_CREDENTIALS'
+        message: 'Email and password are required'
       },
       'INVALID_CREDENTIALS': {
         status: 401,
-        message: 'Invalid email or password',
-        code: 'INVALID_CREDENTIALS'
+        message: 'Invalid email or password'
       },
       'ACCOUNT_DEACTIVATED': {
         status: 403,
-        message: 'Account is deactivated. Please contact an administrator.',
-        code: 'ACCOUNT_DEACTIVATED'
+        message: 'Account is deactivated. Please contact an administrator.'
       },
       'MISSING_EMAIL': {
         status: 400,
-        message: 'Email is required',
-        code: 'MISSING_EMAIL'
+        message: 'Email is required'
       },
       'MISSING_FIELDS': {
         status: 400,
-        message: 'All fields are required',
-        code: 'MISSING_FIELDS'
+        message: 'All fields are required'
       },
       'PASSWORD_MISMATCH': {
         status: 400,
-        message: 'Passwords do not match',
-        code: 'PASSWORD_MISMATCH'
+        message: 'Passwords do not match'
       },
       'PASSWORD_TOO_SHORT': {
         status: 400,
-        message: 'Password must be at least 8 characters long',
-        code: 'PASSWORD_TOO_SHORT'
+        message: 'Password must be at least 8 characters long'
       },
       'INVALID_TOKEN': {
         status: 400,
-        message: 'Invalid or expired reset token',
-        code: 'INVALID_TOKEN'
+        message: 'Invalid or expired reset token'
       },
       'USER_NOT_FOUND': {
         status: 404,
-        message: 'User not found',
-        code: 'USER_NOT_FOUND'
+        message: 'User not found'
       },
       'INVALID_PASSWORD': {
         status: 401,
-        message: 'Current password is incorrect',
-        code: 'INVALID_PASSWORD'
+        message: 'Current password is incorrect'
+      },
+      'MISSING_OTP_FIELDS': {
+        status: 400,
+        message: 'Email and OTP are required'
+      },
+      'INVALID_OTP_TYPE': {
+        status: 400,
+        message: 'Invalid OTP type'
+      },
+      'OTP_VERIFICATION_FAILED': {
+        status: 400,
+        message: 'Invalid or expired OTP'
+      },
+      'OTP_RESEND_FAILED': {
+        status: 400,
+        message: 'Failed to resend OTP'
       }
     };
 
     const errorConfig = errorMap[error.message] || {
-      status: 500,
-      message: 'Internal server error',
-      code: 'SERVER_ERROR'
+      status: error.status || 500,
+      message: error.message || 'Internal server error'
     };
 
-    return res.status(errorConfig.status).json({
-      message: errorConfig.message,
-      code: errorConfig.code,
-      success: false
-    });
+    const errorResponse = new ErrorResponse(errorConfig.message);
+    return res.status(errorConfig.status).json(errorResponse);
   }
 }
 

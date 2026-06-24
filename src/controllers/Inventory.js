@@ -1,5 +1,8 @@
+// controllers/InventoryController.js
 const InventoryService = require('../services/Inventory');
 const { getCurrentEntity } = require('../middleware/auth');
+const { ApiResponse, ErrorResponse } = require('../utils/response');
+const Pagination = require('../utils/pagination');
 
 class InventoryController {
   /**
@@ -29,12 +32,23 @@ class InventoryController {
         parseInt(limit)
       );
 
-      return res.json({
-        message: "Inventory items retrieved successfully",
-        code: "INVENTORY_FETCH_SUCCESS",
-        success: true,
-        results: result
-      });
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}${req.path}`;
+      const pagination = Pagination.generatePaginationResponse(
+        result.items,
+        result.count,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query
+      );
+
+      const response = new ApiResponse(
+        result.items,
+        "Inventory items retrieved successfully",
+        pagination
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -51,12 +65,8 @@ class InventoryController {
 
       const item = await InventoryService.getItemByUuid(entityId, uuid);
 
-      return res.json({
-        message: "Inventory item retrieved successfully",
-        code: "INVENTORY_ITEM_FETCH_SUCCESS",
-        success: true,
-        results: item
-      });
+      const response = new ApiResponse(item, "Inventory item retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -73,12 +83,8 @@ class InventoryController {
 
       const item = await InventoryService.getItemByPartNumber(entityId, partNumber);
 
-      return res.json({
-        message: "Inventory item retrieved successfully",
-        code: "INVENTORY_ITEM_FETCH_SUCCESS",
-        success: true,
-        results: item
-      });
+      const response = new ApiResponse(item, "Inventory item retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -99,12 +105,23 @@ class InventoryController {
         parseInt(limit)
       );
 
-      return res.json({
-        message: "Low stock items retrieved successfully",
-        code: "LOW_STOCK_FETCH_SUCCESS",
-        success: true,
-        results: result
-      });
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}${req.path}`;
+      const pagination = Pagination.generatePaginationResponse(
+        result.items,
+        result.count,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query
+      );
+
+      const response = new ApiResponse(
+        result.items,
+        "Low stock items retrieved successfully",
+        pagination
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -120,12 +137,8 @@ class InventoryController {
 
       const stats = await InventoryService.getInventoryStats(entityId);
 
-      return res.json({
-        message: "Inventory statistics retrieved successfully",
-        code: "INVENTORY_STATS_FETCH_SUCCESS",
-        success: true,
-        results: stats
-      });
+      const response = new ApiResponse(stats, "Inventory statistics retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -142,12 +155,8 @@ class InventoryController {
 
       const item = await InventoryService.createItem(entityId, itemData, req);
 
-      return res.json({
-        message: "Inventory item created successfully",
-        code: "INVENTORY_CREATED_SUCCESS",
-        success: true,
-        results: item
-      });
+      const response = new ApiResponse(item, "Inventory item created successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -163,17 +172,15 @@ class InventoryController {
       const { items } = req.body;
 
       if (!items || !Array.isArray(items) || items.length === 0) {
-        throw new Error('ITEMS_ARRAY_REQUIRED');
+        const error = new Error('ITEMS_ARRAY_REQUIRED');
+        error.status = 400;
+        throw error;
       }
 
       const result = await InventoryService.bulkCreateItems(entityId, items, req);
 
-      return res.json({
-        message: "Bulk inventory creation completed",
-        code: "BULK_INVENTORY_CREATED",
-        success: true,
-        results: result
-      });
+      const response = new ApiResponse(result, "Bulk inventory creation completed");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -191,12 +198,8 @@ class InventoryController {
 
       const item = await InventoryService.updateItem(entityId, uuid, updateData, req);
 
-      return res.json({
-        message: "Inventory item updated successfully",
-        code: "INVENTORY_UPDATED_SUCCESS",
-        success: true,
-        results: item
-      });
+      const response = new ApiResponse(item, "Inventory item updated successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -214,12 +217,8 @@ class InventoryController {
 
       const item = await InventoryService.adjustStock(entityId, uuid, adjustmentData, req);
 
-      return res.json({
-        message: "Stock adjusted successfully",
-        code: "STOCK_ADJUSTED_SUCCESS",
-        success: true,
-        results: item
-      });
+      const response = new ApiResponse(item, "Stock adjusted successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -236,11 +235,8 @@ class InventoryController {
 
       const result = await InventoryService.deleteItem(entityId, uuid, req);
 
-      return res.json({
-        message: result.message,
-        code: "INVENTORY_DELETED_SUCCESS",
-        success: true
-      });
+      const response = new ApiResponse(null, result.message);
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -253,74 +249,35 @@ class InventoryController {
     console.error('Inventory Controller Error:', error);
 
     const errorMap = {
-      'NAME_REQUIRED': {
-        status: 400,
-        message: 'Item name is required',
-        code: 'NAME_REQUIRED'
-      },
-      'PART_NUMBER_ALREADY_EXISTS': {
-        status: 409,
-        message: 'Part number already exists',
-        code: 'PART_NUMBER_ALREADY_EXISTS'
-      },
-      'INVENTORY_ITEM_NOT_FOUND': {
-        status: 404,
-        message: 'Inventory item not found',
-        code: 'INVENTORY_ITEM_NOT_FOUND'
-      },
-      'QUANTITY_REQUIRED': {
-        status: 400,
-        message: 'Quantity is required for stock adjustment',
-        code: 'QUANTITY_REQUIRED'
-      },
-      'INSUFFICIENT_STOCK': {
-        status: 400,
-        message: 'Insufficient stock for this operation',
-        code: 'INSUFFICIENT_STOCK'
-      },
-      'ITEMS_ARRAY_REQUIRED': {
-        status: 400,
-        message: 'Items array is required for bulk creation',
-        code: 'ITEMS_ARRAY_REQUIRED'
-      },
-      'ENTITY_ID_REQUIRED': {
-        status: 400,
-        message: 'Entity ID is required',
-        code: 'ENTITY_ID_REQUIRED'
-      }
+      'NAME_REQUIRED': { status: 400, message: 'Item name is required' },
+      'PART_NUMBER_ALREADY_EXISTS': { status: 409, message: 'Part number already exists' },
+      'INVENTORY_ITEM_NOT_FOUND': { status: 404, message: 'Inventory item not found' },
+      'QUANTITY_REQUIRED': { status: 400, message: 'Quantity is required for stock adjustment' },
+      'INSUFFICIENT_STOCK': { status: 400, message: 'Insufficient stock for this operation' },
+      'ITEMS_ARRAY_REQUIRED': { status: 400, message: 'Items array is required for bulk creation' },
+      'ENTITY_ID_REQUIRED': { status: 400, message: 'Entity ID is required' }
     };
 
     // Check for MongoDB duplicate key error
     if (error.code === 11000) {
-      return res.status(409).json({
-        message: 'Duplicate entry detected',
-        code: 'DUPLICATE_ENTRY',
-        success: false
-      });
+      const errorResponse = new ErrorResponse('Duplicate entry detected');
+      return res.status(409).json(errorResponse);
     }
 
     // Check for validation error
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map(err => err.message);
-      return res.status(400).json({
-        message: 'Validation error: ' + messages.join(', '),
-        code: 'VALIDATION_ERROR',
-        success: false,
-        errors: messages
-      });
+      const errorResponse = new ErrorResponse('Validation error: ' + messages.join(', '));
+      return res.status(400).json(errorResponse);
     }
 
     const errorConfig = errorMap[error.message] || {
-      status: 500,
-      message: error.message || 'Internal server error',
-      code: 'SERVER_ERROR'
+      status: error.status || 500,
+      message: error.message || 'Internal server error'
     };
 
-    return res.status(errorConfig.status).json({
-      message: errorConfig.message,
-      code: errorConfig.code,
-      success: false
-    });
+    const errorResponse = new ErrorResponse(errorConfig.message);
+    return res.status(errorConfig.status).json(errorResponse);
   }
 }
 

@@ -5,6 +5,14 @@ const { logActivity, ActivityActions } = require('../utils/ActivityLogger');
 
 class ExpenseService {
   /**
+   * Format number to 2 decimal places
+   */
+  formatCurrency(value) {
+    if (value === undefined || value === null || isNaN(value)) return 0;
+    return Math.round(value * 100) / 100;
+  }
+
+  /**
    * Build a MongoDB entity match object from an entityId string.
    * Returns {} when entityId is null (= all entities).
    */
@@ -48,12 +56,12 @@ class ExpenseService {
         entity_id: data.entity_id || user?.primary_entity_id,
         title: data.title,
         description: data.description,
-        amount: data.amount,
+        amount: this.formatCurrency(data.amount),
         category: data.category,
         sub_category: data.sub_category,
         date: data.date || new Date(),
         payment_method: data.payment_method || 'cash',
-        status: 'pending', // Always set to pending on creation
+        status: 'pending',
         vendor: data.vendor,
         vendor_contact: data.vendor_contact,
         receipt_url: data.receipt_url,
@@ -83,7 +91,9 @@ class ExpenseService {
         });
       }
 
-      return expense;
+      const expenseObj = expense.toObject ? expense.toObject() : expense;
+      expenseObj.amount = this.formatCurrency(expenseObj.amount);
+      return expenseObj;
     } catch (error) {
       console.error('Error creating expense:', error);
       throw error;
@@ -106,7 +116,9 @@ class ExpenseService {
         throw new Error('EXPENSE_NOT_FOUND');
       }
 
-      return expense;
+      const expenseObj = expense.toObject ? expense.toObject() : expense;
+      expenseObj.amount = this.formatCurrency(expenseObj.amount);
+      return expenseObj;
     } catch (error) {
       console.error('Error getting expense:', error);
       throw error;
@@ -144,13 +156,11 @@ class ExpenseService {
 
       // Status filter - only allow pending or paid
       if (status) {
-        // Only allow valid statuses: pending or paid
         const validStatuses = ['pending', 'paid'];
         if (validStatuses.includes(status)) {
           query.status = status;
         }
       } else {
-        // Default: show both pending and paid
         query.status = { $in: ['pending', 'paid'] };
       }
 
@@ -193,14 +203,18 @@ class ExpenseService {
         Expense.countDocuments(query),
       ]);
 
+      // Format currency values in expenses
+      const formattedExpenses = expenses.map(exp => ({
+        ...exp,
+        amount: this.formatCurrency(exp.amount || 0),
+      }));
+
       return {
-        expenses,
-        pagination: {
-          page,
-          limit,
-          total,
-          total_pages: Math.ceil(total / limit),
-        },
+        expenses: formattedExpenses,
+        count: total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
       };
     } catch (error) {
       console.error('Error getting expenses:', error);
@@ -228,7 +242,7 @@ class ExpenseService {
 
       if (data.title) updatedFields.title = data.title;
       if (data.description !== undefined) updatedFields.description = data.description;
-      if (data.amount !== undefined) updatedFields.amount = data.amount;
+      if (data.amount !== undefined) updatedFields.amount = this.formatCurrency(data.amount);
       if (data.category) updatedFields.category = data.category;
       if (data.sub_category !== undefined) updatedFields.sub_category = data.sub_category;
       if (data.date) updatedFields.date = data.date;
@@ -241,7 +255,6 @@ class ExpenseService {
 
       // Handle status transitions - only pending -> paid
       if (data.status && data.status !== expense.status) {
-        // Only allow pending -> paid transition
         if (expense.status === 'pending' && data.status === 'paid') {
           updatedFields.status = 'paid';
           updatedFields.paid_by = user?.uuid || user?._id || 'system';
@@ -275,7 +288,9 @@ class ExpenseService {
         });
       }
 
-      return updatedExpense;
+      const expenseObj = updatedExpense.toObject ? updatedExpense.toObject() : updatedExpense;
+      expenseObj.amount = this.formatCurrency(expenseObj.amount);
+      return expenseObj;
     } catch (error) {
       console.error('Error updating expense:', error);
       throw error;
@@ -328,7 +343,9 @@ class ExpenseService {
         });
       }
 
-      return updatedExpense;
+      const expenseObj = updatedExpense.toObject ? updatedExpense.toObject() : updatedExpense;
+      expenseObj.amount = this.formatCurrency(expenseObj.amount);
+      return expenseObj;
     } catch (error) {
       console.error('Error marking expense as paid:', error);
       throw error;
@@ -370,7 +387,7 @@ class ExpenseService {
         });
       }
 
-      return { success: true };
+      return { success: true, message: 'Expense deleted successfully' };
     } catch (error) {
       console.error('Error deleting expense:', error);
       throw error;
@@ -399,12 +416,20 @@ class ExpenseService {
         },
       ]);
 
-      return stats[0] || {
+      const result = stats[0] || {
         total_expenses: 0,
         count: 0,
         avg_amount: 0,
         max_amount: 0,
         min_amount: 0,
+      };
+
+      return {
+        total_expenses: this.formatCurrency(result.total_expenses || 0),
+        count: result.count || 0,
+        avg_amount: this.formatCurrency(result.avg_amount || 0),
+        max_amount: this.formatCurrency(result.max_amount || 0),
+        min_amount: this.formatCurrency(result.min_amount || 0),
       };
     } catch (error) {
       console.error('Error getting expense stats:', error);
@@ -435,7 +460,7 @@ class ExpenseService {
       return breakdown.map(item => ({
         category: item._id || 'Unknown',
         count: item.count || 0,
-        amount: item.amount || 0,
+        amount: this.formatCurrency(item.amount || 0),
       }));
     } catch (error) {
       console.error('Error getting expense category breakdown:', error);
@@ -470,7 +495,7 @@ class ExpenseService {
       breakdown.forEach(item => {
         if (statusMap[item._id]) {
           statusMap[item._id].count = item.count || 0;
-          statusMap[item._id].amount = item.amount || 0;
+          statusMap[item._id].amount = this.formatCurrency(item.amount || 0);
         }
       });
 
@@ -503,7 +528,6 @@ class ExpenseService {
         'Other',
       ];
 
-      // Only pending and paid statuses
       const statuses = ['pending', 'paid'];
       const paymentMethods = ['cash', 'bank', 'mobile_money', 'credit_card'];
 

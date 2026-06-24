@@ -1,5 +1,6 @@
-// backend/src/controllers/gmailController.js
+// controllers/gmailController.js
 const { google } = require('googleapis');
+const { ApiResponse, ErrorResponse } = require('../utils/response'); // Adjust path as needed
 
 // Store tokens in memory (use database in production)
 const userTokens = new Map();
@@ -42,10 +43,12 @@ class GmailController {
       });
 
       console.log('Generated auth URL');
-      res.json({ url });
+      const response = new ApiResponse({ url }, "Auth URL generated successfully");
+      return res.json(response);
     } catch (error) {
       console.error('Error getting auth URL:', error);
-      res.status(500).json({ error: 'Failed to generate auth URL', details: error.message });
+      const errorResponse = new ErrorResponse('Failed to generate auth URL');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -63,7 +66,8 @@ class GmailController {
       
       if (!code) {
         console.error('No code provided');
-        return res.status(400).json({ error: 'Authorization code required' });
+        const errorResponse = new ErrorResponse('Authorization code required');
+        return res.status(400).json(errorResponse);
       }
 
       const oauth2Client = new google.auth.OAuth2(
@@ -108,7 +112,8 @@ class GmailController {
       const userData = userTokens.get(userId);
       
       if (!userData || !userData.tokens) {
-        return res.status(401).json({ error: 'Gmail not connected' });
+        const errorResponse = new ErrorResponse('Gmail not connected');
+        return res.status(401).json(errorResponse);
       }
 
       let { oauthClient, tokens } = userData;
@@ -154,10 +159,15 @@ class GmailController {
         })
       );
 
-      res.json({ messages: fullMessages, total: fullMessages.length });
+      const apiResponse = new ApiResponse(
+        { messages: fullMessages, total: fullMessages.length },
+        "Messages retrieved successfully"
+      );
+      return res.json(apiResponse);
     } catch (error) {
       console.error('Error getting messages:', error);
-      res.status(500).json({ error: 'Failed to fetch messages', details: error.message });
+      const errorResponse = new ErrorResponse('Failed to fetch messages');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -168,7 +178,8 @@ class GmailController {
       const userData = userTokens.get(userId);
       
       if (!userData || !userData.tokens) {
-        return res.status(401).json({ error: 'Gmail not connected' });
+        const errorResponse = new ErrorResponse('Gmail not connected');
+        return res.status(401).json(errorResponse);
       }
 
       let { oauthClient, tokens } = userData;
@@ -192,10 +203,12 @@ class GmailController {
       });
 
       const message = this.parseMessage(response.data);
-      res.json({ message });
+      const apiResponse = new ApiResponse({ message }, "Message retrieved successfully");
+      return res.json(apiResponse);
     } catch (error) {
       console.error('Error getting message by ID:', error);
-      res.status(500).json({ error: 'Failed to fetch message', details: error.message });
+      const errorResponse = new ErrorResponse('Failed to fetch message');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -206,11 +219,13 @@ class GmailController {
       const userData = userTokens.get(userId);
       
       if (!userData || !userData.tokens) {
-        return res.status(401).json({ error: 'Gmail not connected' });
+        const errorResponse = new ErrorResponse('Gmail not connected');
+        return res.status(401).json(errorResponse);
       }
 
       if (!to || !subject || !body) {
-        return res.status(400).json({ error: 'Missing required fields: to, subject, body' });
+        const errorResponse = new ErrorResponse('Missing required fields: to, subject, body');
+        return res.status(400).json(errorResponse);
       }
 
       let { oauthClient, tokens } = userData;
@@ -256,14 +271,18 @@ class GmailController {
 
       const response = await gmail.users.messages.send(requestBody);
       
-      res.json({ 
-        success: true, 
-        messageId: response.data.id,
-        threadId: response.data.threadId
-      });
+      const apiResponse = new ApiResponse(
+        { 
+          messageId: response.data.id,
+          threadId: response.data.threadId
+        },
+        "Message sent successfully"
+      );
+      return res.json(apiResponse);
     } catch (error) {
       console.error('Error sending message:', error);
-      res.status(500).json({ error: 'Failed to send message', details: error.message });
+      const errorResponse = new ErrorResponse('Failed to send message');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -274,11 +293,13 @@ class GmailController {
       const userData = userTokens.get(userId);
       
       if (!userData || !userData.tokens) {
-        return res.status(401).json({ error: 'Gmail not connected' });
+        const errorResponse = new ErrorResponse('Gmail not connected');
+        return res.status(401).json(errorResponse);
       }
 
       if (!messageId || !replyBody) {
-        return res.status(400).json({ error: 'Missing required fields: messageId, replyBody' });
+        const errorResponse = new ErrorResponse('Missing required fields: messageId, replyBody');
+        return res.status(400).json(errorResponse);
       }
 
       let { oauthClient, tokens } = userData;
@@ -336,14 +357,18 @@ class GmailController {
         }
       });
       
-      res.json({ 
-        success: true, 
-        messageId: response.data.id,
-        threadId: response.data.threadId
-      });
+      const apiResponse = new ApiResponse(
+        { 
+          messageId: response.data.id,
+          threadId: response.data.threadId
+        },
+        "Reply sent successfully"
+      );
+      return res.json(apiResponse);
     } catch (error) {
       console.error('Error replying to message:', error);
-      res.status(500).json({ error: 'Failed to send reply', details: error.message });
+      const errorResponse = new ErrorResponse('Failed to send reply');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -354,11 +379,13 @@ class GmailController {
       const userData = userTokens.get(userId);
       
       if (!userData || !userData.tokens) {
-        return res.status(401).json({ error: 'Gmail not connected' });
+        const errorResponse = new ErrorResponse('Gmail not connected');
+        return res.status(401).json(errorResponse);
       }
 
       if (!messageId || !action) {
-        return res.status(400).json({ error: 'Missing required fields: messageId, action' });
+        const errorResponse = new ErrorResponse('Missing required fields: messageId, action');
+        return res.status(400).json(errorResponse);
       }
 
       let { oauthClient, tokens } = userData;
@@ -400,9 +427,11 @@ class GmailController {
             userId: 'me',
             id: messageId
           });
-          return res.json({ success: true, action });
+          const trashResponse = new ApiResponse({ action }, "Message trashed successfully");
+          return res.json(trashResponse);
         default:
-          return res.status(400).json({ error: 'Invalid action' });
+          const errorResponse = new ErrorResponse('Invalid action');
+          return res.status(400).json(errorResponse);
       }
       
       if (addLabelIds.length > 0 || removeLabelIds.length > 0) {
@@ -416,10 +445,12 @@ class GmailController {
         });
       }
       
-      res.json({ success: true, action });
+      const apiResponse = new ApiResponse({ action }, "Message modified successfully");
+      return res.json(apiResponse);
     } catch (error) {
       console.error('Error modifying message:', error);
-      res.status(500).json({ error: 'Failed to modify message', details: error.message });
+      const errorResponse = new ErrorResponse('Failed to modify message');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -430,11 +461,13 @@ class GmailController {
       const userData = userTokens.get(userId);
       
       if (!userData || !userData.tokens) {
-        return res.status(401).json({ error: 'Gmail not connected' });
+        const errorResponse = new ErrorResponse('Gmail not connected');
+        return res.status(401).json(errorResponse);
       }
 
       if (!messageIds || !messageIds.length || !action) {
-        return res.status(400).json({ error: 'Missing required fields: messageIds, action' });
+        const errorResponse = new ErrorResponse('Missing required fields: messageIds, action');
+        return res.status(400).json(errorResponse);
       }
 
       let { oauthClient, tokens } = userData;
@@ -502,10 +535,12 @@ class GmailController {
         }
       }
       
-      res.json({ success: true, results });
+      const apiResponse = new ApiResponse({ results }, "Batch modification completed");
+      return res.json(apiResponse);
     } catch (error) {
       console.error('Error batch modifying messages:', error);
-      res.status(500).json({ error: 'Failed to batch modify messages', details: error.message });
+      const errorResponse = new ErrorResponse('Failed to batch modify messages');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -514,16 +549,21 @@ class GmailController {
       const userId = 'default_user';
       const userData = userTokens.get(userId);
       
-      res.json({ 
-        profile: { 
-          emailAddress: userData?.email || 'Connected',
-          messagesTotal: 0,
-          threadsTotal: 0
-        } 
-      });
+      const apiResponse = new ApiResponse(
+        { 
+          profile: { 
+            emailAddress: userData?.email || 'Connected',
+            messagesTotal: 0,
+            threadsTotal: 0
+          } 
+        },
+        "Profile retrieved successfully"
+      );
+      return res.json(apiResponse);
     } catch (error) {
       console.error('Error getting profile:', error);
-      res.status(500).json({ error: 'Failed to get profile' });
+      const errorResponse = new ErrorResponse('Failed to get profile');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -532,12 +572,17 @@ class GmailController {
       const userId = 'default_user';
       const userData = userTokens.get(userId);
       
-      res.json({ 
-        connected: !!userData && !!userData.tokens,
-        email: userData?.email || null
-      });
+      const apiResponse = new ApiResponse(
+        { 
+          connected: !!userData && !!userData.tokens,
+          email: userData?.email || null
+        },
+        "Connection status retrieved"
+      );
+      return res.json(apiResponse);
     } catch (error) {
-      res.json({ connected: false });
+      const errorResponse = new ErrorResponse('Failed to check connection');
+      return res.status(500).json(errorResponse);
     }
   }
 
@@ -546,10 +591,12 @@ class GmailController {
       const userId = 'default_user';
       userTokens.delete(userId);
       
-      res.json({ success: true, message: 'Gmail disconnected successfully' });
+      const apiResponse = new ApiResponse(null, "Gmail disconnected successfully");
+      return res.json(apiResponse);
     } catch (error) {
       console.error('Error disconnecting:', error);
-      res.status(500).json({ error: 'Failed to disconnect' });
+      const errorResponse = new ErrorResponse('Failed to disconnect');
+      return res.status(500).json(errorResponse);
     }
   }
 

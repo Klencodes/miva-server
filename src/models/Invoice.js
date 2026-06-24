@@ -38,6 +38,7 @@ const InvoiceSchema = new mongoose.Schema(
     items: [{
       id: { type: String, required: true },
       name: { type: String, required: true },
+      part_number: { type: String, required: true },
       type: { 
         type: String, 
         enum: ['hose', 'fitting', 'ferrule', 'assembly', 'adapter', 'coupling', 'other'],

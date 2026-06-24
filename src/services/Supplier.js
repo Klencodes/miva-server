@@ -1,7 +1,16 @@
+// services/supplierService.js
 const Supplier = require('../models/Supplier');
 const { logActivity } = require('../utils/ActivityLogger');
 
 class SupplierService {
+  /**
+   * Format number to 2 decimal places
+   */
+  formatCurrency(value) {
+    if (value === undefined || value === null || isNaN(value)) return 0;
+    return Math.round(value * 100) / 100;
+  }
+
   /**
    * Get all suppliers with pagination and filtering
    */
@@ -50,12 +59,10 @@ class SupplierService {
 
     return {
       suppliers: items.map(i => i.toSafeObject()),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      count: total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 
@@ -394,12 +401,10 @@ class SupplierService {
 
     return {
       suppliers: suppliers.map(s => s.toSafeObject()),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      count: total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 }

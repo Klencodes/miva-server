@@ -1,7 +1,8 @@
-// src/controllers/ExpenseController.js
-
+// controllers/ExpenseController.js
 const ExpenseService = require('../services/Expense');
 const { getCurrentEntity } = require('../middleware/auth');
+const { ApiResponse, ErrorResponse } = require('../utils/response');
+const Pagination = require('../utils/pagination');
 
 class ExpenseController {
   /**
@@ -45,12 +46,23 @@ class ExpenseController {
 
       const result = await ExpenseService.getExpenses(filters, pagination);
 
-      return res.json({
-        message: 'Expenses retrieved successfully',
-        code: 'EXPENSES_FETCH_SUCCESS',
-        success: true,
-        results: result,
-      });
+      // Generate pagination links
+      const baseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}${req.path}`;
+      const paginationLinks = Pagination.generatePaginationResponse(
+        result.expenses,
+        result.count,
+        parseInt(page),
+        parseInt(limit),
+        baseUrl,
+        req.query
+      );
+
+      const response = new ApiResponse(
+        result.expenses,
+        "Expenses retrieved successfully",
+        paginationLinks
+      );
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -67,12 +79,8 @@ class ExpenseController {
 
       const expense = await ExpenseService.getExpenseByUuid(uuid, entityId);
 
-      return res.json({
-        message: 'Expense retrieved successfully',
-        code: 'EXPENSE_FETCH_SUCCESS',
-        success: true,
-        results: { expense },
-      });
+      const response = new ApiResponse(expense, "Expense retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -85,15 +93,10 @@ class ExpenseController {
   createExpense = async (req, res) => {
     try {
       const { body, user } = req;
-
       const expense = await ExpenseService.createExpense(body, user, req);
 
-      return res.json({
-        message: 'Expense created successfully',
-        code: 'EXPENSE_CREATE_SUCCESS',
-        success: true,
-        results: { expense },
-      });
+      const response = new ApiResponse(expense, "Expense created successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -110,12 +113,8 @@ class ExpenseController {
 
       const expense = await ExpenseService.updateExpense(uuid, body, user, req);
 
-      return res.json({
-        message: 'Expense updated successfully',
-        code: 'EXPENSE_UPDATE_SUCCESS',
-        success: true,
-        results: { expense },
-      });
+      const response = new ApiResponse(expense, "Expense updated successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -132,12 +131,8 @@ class ExpenseController {
 
       const expense = await ExpenseService.markExpenseAsPaid(uuid, user, req);
 
-      return res.json({
-        message: 'Expense marked as paid successfully',
-        code: 'EXPENSE_PAY_SUCCESS',
-        success: true,
-        results: { expense },
-      });
+      const response = new ApiResponse(expense, "Expense marked as paid successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -154,11 +149,8 @@ class ExpenseController {
 
       const result = await ExpenseService.deleteExpense(uuid, user, req);
 
-      return res.json({
-        message: result.message || 'Expense deleted successfully',
-        code: 'EXPENSE_DELETE_SUCCESS',
-        success: true,
-      });
+      const response = new ApiResponse(null, result.message || "Expense deleted successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -193,12 +185,8 @@ class ExpenseController {
 
       const stats = await ExpenseService.getExpenseStats(entityId, filters);
 
-      return res.json({
-        message: 'Expense statistics retrieved successfully',
-        code: 'EXPENSE_STATS_FETCH_SUCCESS',
-        success: true,
-        results: stats,
-      });
+      const response = new ApiResponse(stats, "Expense statistics retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -233,12 +221,8 @@ class ExpenseController {
 
       const breakdown = await ExpenseService.getExpenseCategoryBreakdown(entityId, filters);
 
-      return res.json({
-        message: 'Expense category breakdown retrieved successfully',
-        code: 'EXPENSE_CATEGORY_BREAKDOWN_FETCH_SUCCESS',
-        success: true,
-        results: breakdown,
-      });
+      const response = new ApiResponse(breakdown, "Expense category breakdown retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -273,12 +257,8 @@ class ExpenseController {
 
       const breakdown = await ExpenseService.getExpenseStatusBreakdown(entityId, filters);
 
-      return res.json({
-        message: 'Expense status breakdown retrieved successfully',
-        code: 'EXPENSE_STATUS_BREAKDOWN_FETCH_SUCCESS',
-        success: true,
-        results: breakdown,
-      });
+      const response = new ApiResponse(breakdown, "Expense status breakdown retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -292,12 +272,8 @@ class ExpenseController {
     try {
       const options = await ExpenseService.getExpenseOptions();
 
-      return res.json({
-        message: 'Expense options retrieved successfully',
-        code: 'EXPENSE_OPTIONS_FETCH_SUCCESS',
-        success: true,
-        results: options,
-      });
+      const response = new ApiResponse(options, "Expense options retrieved successfully");
+      return res.json(response);
     } catch (error) {
       return this.handleError(error, res);
     }
@@ -310,69 +286,34 @@ class ExpenseController {
     console.error('Expense Controller Error:', error);
 
     const errorMap = {
-      'EXPENSE_NOT_FOUND': {
-        status: 404,
-        message: 'Expense not found',
-        code: 'EXPENSE_NOT_FOUND',
-      },
-      'EXPENSE_NOT_EDITABLE': {
-        status: 400,
-        message: 'Expense cannot be edited in its current status',
-        code: 'EXPENSE_NOT_EDITABLE',
-      },
-      'EXPENSE_NOT_PAYABLE': {
-        status: 400,
-        message: 'Expense cannot be marked as paid in its current status',
-        code: 'EXPENSE_NOT_PAYABLE',
-      },
-      'EXPENSE_NOT_DELETABLE': {
-        status: 400,
-        message: 'Expense cannot be deleted in its current status',
-        code: 'EXPENSE_NOT_DELETABLE',
-      },
-      'INVALID_STATUS_TRANSITION': {
-        status: 400,
-        message: 'Invalid status transition. Only pending -> paid is allowed',
-        code: 'INVALID_STATUS_TRANSITION',
-      },
-      'ENTITY_ID_REQUIRED': {
-        status: 400,
-        message: 'Entity ID is required',
-        code: 'ENTITY_ID_REQUIRED',
-      },
+      'EXPENSE_NOT_FOUND': { status: 404, message: 'Expense not found' },
+      'EXPENSE_NOT_EDITABLE': { status: 400, message: 'Expense cannot be edited in its current status' },
+      'EXPENSE_NOT_PAYABLE': { status: 400, message: 'Expense cannot be marked as paid in its current status' },
+      'EXPENSE_NOT_DELETABLE': { status: 400, message: 'Expense cannot be deleted in its current status' },
+      'INVALID_STATUS_TRANSITION': { status: 400, message: 'Invalid status transition. Only pending -> paid is allowed' },
+      'ENTITY_ID_REQUIRED': { status: 400, message: 'Entity ID is required' },
     };
 
     // Check for MongoDB validation error
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map((err) => err.message);
-      return res.status(400).json({
-        message: 'Validation error: ' + messages.join(', '),
-        code: 'VALIDATION_ERROR',
-        success: false,
-        errors: messages,
-      });
+      const errorResponse = new ErrorResponse('Validation error: ' + messages.join(', '));
+      return res.status(400).json(errorResponse);
     }
 
     // Check for MongoDB duplicate key error
     if (error.code === 11000) {
-      return res.status(409).json({
-        message: 'Duplicate entry detected',
-        code: 'DUPLICATE_ENTRY',
-        success: false,
-      });
+      const errorResponse = new ErrorResponse('Duplicate entry detected');
+      return res.status(409).json(errorResponse);
     }
 
     const errorConfig = errorMap[error.message] || {
-      status: 500,
-      message: error.message || 'Internal server error',
-      code: 'SERVER_ERROR',
+      status: error.status || 500,
+      message: error.message || 'Internal server error'
     };
 
-    return res.status(errorConfig.status).json({
-      message: errorConfig.message,
-      code: errorConfig.code,
-      success: false,
-    });
+    const errorResponse = new ErrorResponse(errorConfig.message);
+    return res.status(errorConfig.status).json(errorResponse);
   }
 }
 
