@@ -1,7 +1,7 @@
 // services/invoiceService.js
 const Invoice = require('../models/Invoice');
 const Payment = require('../models/Payment');
-const { logActivity, ActivityActions } = require('../utils/ActivityLogger');
+const { logActivity, ActivityActions } = require('../utils/activityLogger');
 const EmailService = require('./Email');
 const EntityService = require('./Entity');
 

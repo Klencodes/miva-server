@@ -1,7 +1,7 @@
 // src/services/ExpenseService.js
 
 const Expense = require('../models/Expense');
-const { logActivity, ActivityActions } = require('../utils/ActivityLogger');
+const { logActivity, ActivityActions } = require("../utils/activityLogger");
 
 class ExpenseService {
   /**

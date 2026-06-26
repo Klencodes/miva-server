@@ -1,7 +1,7 @@
 // services/customerService.js
 const Customer = require('../models/Customer');
 const Invoice = require('../models/Invoice');
-const { logActivity } = require('../utils/ActivityLogger');
+const { logActivity } = require('../utils/activityLogger');
 
 class CustomerService {
   /**

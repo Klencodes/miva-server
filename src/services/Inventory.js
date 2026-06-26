@@ -1,6 +1,6 @@
 // services/inventoryService.js
 const Inventory = require('../models/Inventory');
-const { logActivity } = require('../utils/ActivityLogger');
+const { logActivity } = require('../utils/activityLogger');
 
 class InventoryService {
   /**

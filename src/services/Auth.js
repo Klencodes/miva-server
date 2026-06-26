@@ -3,8 +3,7 @@ const { User } = require("../models/User");
 const OTP = require("../models/OTP");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
-const { logActivity } = require("../utils/ActivityLogger");
-const { ActivityActions } = require("../models/ActivityLog");
+const { logActivity, ActivityActions } = require("../utils/activityLogger");
 
 class AuthService {
   /**

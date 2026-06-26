@@ -2,8 +2,7 @@
 const AuthService = require('../services/Auth');
 const OTPService = require('../services/OTP');
 const { User } = require("../models/User");
-const { logActivity } = require("../utils/ActivityLogger");
-const { ActivityActions } = require("../models/ActivityLog");
+const { logActivity, ActivityActions } = require("../utils/activityLogger");
 const { ApiResponse, ErrorResponse } = require('../utils/response'); 
 
 class AuthController {

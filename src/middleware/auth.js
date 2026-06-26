@@ -1,6 +1,6 @@
 // middleware/auth.js
 const jwt = require('jsonwebtoken');
-const { logActivity } = require('../utils/ActivityLogger');
+const { logActivity } = require('../utils/activityLogger');
 
 const AUTO_LOGOUT_ROLES = ['sales', 'viewer', 'technician'];
 const AUTO_LOGOUT_TTL_SECONDS = 60 * 60;

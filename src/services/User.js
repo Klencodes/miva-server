@@ -1,8 +1,8 @@
 // services/User.js
 const { User, UserRoles, defaultPermissionsForRole } = require("../models/User");
 const Entity = require("../models/Entity");
-const { logActivity } = require("../utils/ActivityLogger");
-const { ActivityActions } = require("../models/ActivityLog");
+const { logActivity, ActivityActions } = require("../utils/activityLogger");
+
 
 class UserService {
   /**

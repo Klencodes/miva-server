@@ -1,6 +1,6 @@
 const Inventory = require('../models/Inventory');
 const Invoice = require('../models/Invoice');
-const { logActivity, ActivityActions } = require('../utils/ActivityLogger');
+const { logActivity, ActivityActions } = require('../utils/activityLogger');
 
 class DashboardService {
   /**

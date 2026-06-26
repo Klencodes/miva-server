@@ -1,8 +1,7 @@
 // services/entityService.js
 const Entity = require("../models/Entity");
 const { User } = require("../models/User");
-const { logActivity } = require("../utils/ActivityLogger");
-const { ActivityActions } = require("../models/ActivityLog");
+const { logActivity, ActivityActions } = require("../utils/activityLogger");
 
 class EntityService {
   /**

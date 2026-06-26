@@ -1,6 +1,6 @@
 // services/supplierService.js
 const Supplier = require('../models/Supplier');
-const { logActivity } = require('../utils/ActivityLogger');
+const { logActivity } = require('../utils/activityLogger');
 
 class SupplierService {
   /**

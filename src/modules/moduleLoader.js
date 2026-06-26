@@ -3,7 +3,6 @@ const path = require('path');
 // Get the absolute path to the routes directory
 // Assuming moduleLoader.js is in src/modules/ and routes are in src/routes/
 const ROUTES_DIR = path.join(__dirname, '..', 'routes');
-
 const MODULE_REGISTRY = [
   { name: 'Auth',         path: path.join(ROUTES_DIR, 'Auth'),         mountPath: '/api/auth'          },
   { name: 'Gmail',        path: path.join(ROUTES_DIR, 'Gmail'),        mountPath: '/api/gmail'         },
