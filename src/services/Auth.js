@@ -1,5 +1,6 @@
 // services/authService.js
 const { User } = require("../models/User");
+const OTP = require("../models/OTP");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const { logActivity } = require("../utils/ActivityLogger");
@@ -249,64 +250,55 @@ class AuthService {
     return { success: true };
   };
 
-  /**
-   * Request password reset
-   */
-  forgotPassword = async (email, req) => {
-    if (!email) {
-      throw new Error("MISSING_EMAIL");
-    }
 
-    // Find user
-    const user = await User.findOne({ email: email.toLowerCase() });
+/**
+ * Request password reset - uses OTP instead of token
+ */
+forgotPassword = async (email, req) => {
+  if (!email) {
+    throw new Error("MISSING_EMAIL");
+  }
 
-    if (!user || !user.is_active) {
-      // Don't reveal whether user exists
-      return {
-        message:
-          "If an account exists with that email, you will receive password reset instructions.",
-        resetToken: null,
-      };
-    }
-
-    // Generate reset token
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const resetTokenHash = crypto
-      .createHash("sha256")
-      .update(resetToken)
-      .digest("hex");
-
-    // Save reset token to user
-    user.reset_password_token = resetTokenHash;
-    user.reset_password_expires = Date.now() + 3600000; // 1 hour
-    await user.save({ validateBeforeSave: false });
-
-    // Log password reset request
-    await logActivity({
-      user_id: user._id,
-      user_name: user.name,
-      user_role: user.role,
-      action: ActivityActions.PASSWORD_CHANGED,
-      description: `Password reset requested for user: ${user.email}`,
-      metadata: { email: user.email, action: "reset_requested" },
-      req,
-      status: "success",
-    });
-
+  // Find user
+  const user = await User.findOne({ email: email.toLowerCase() });
+  
+  // If user doesn't exist or is inactive, still return success for security
+  if (!user || !user.is_active) {
+    // Return null user to indicate no valid user found
     return {
-      message:
-        "If an account exists with that email, you will receive password reset instructions.",
-      resetToken: process.env.NODE_ENV === "development" ? resetToken : null,
+      success: true, // Always return success for security
+      user: null,
+      message: "If an account exists with that email, you will receive password reset instructions.",
     };
+  }
+  
+  // Log password reset request
+  await logActivity({
+    user_id: user._id,
+    user_name: user.name,
+    user_role: user.role,
+    action: ActivityActions.PASSWORD_CHANGED,
+    description: `Password reset requested for user: ${user.email}`,
+    metadata: { email: user.email, action: "reset_requested" },
+    req,
+    status: "success",
+  });
+
+  return {
+    success: true,
+    user: user,
+    message: "If an account exists with that email, you will receive password reset instructions.",
   };
+};
 
   /**
-   * Reset password using token
+   * Reset password using OTP
+   * Payload: { otp, email, new_password, confirm_password }
    */
-  resetPassword = async (token, new_password, confirm_password, req) => {
+  resetPassword = async (otp, email, new_password, confirm_password, req) => {
     // Validate input
-    if (!token || !new_password || !confirm_password) {
-      throw new Error("MISSING_FIELDS");
+    if (!otp || !email || !new_password || !confirm_password) {
+      throw new Error("MISSING_RESET_FIELDS");
     }
 
     if (new_password !== confirm_password) {
@@ -317,24 +309,35 @@ class AuthService {
       throw new Error("PASSWORD_TOO_SHORT");
     }
 
-    // Hash the token
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-
-    // Find user with valid token
-    const user = await User.findOne({
-      reset_password_token: tokenHash,
-      reset_password_expires: { $gt: Date.now() },
+    // Find the OTP record
+    const otpRecord = await OTP.findOne({
+      email: email.toLowerCase(),
+      otp: otp,
+      type: "password_reset",
+      expires_at: { $gt: new Date() },
     });
 
-    if (!user) {
+    if (!otpRecord) {
       throw new Error("INVALID_TOKEN");
+    }
+
+    // Check if OTP has been verified for password reset
+    if (!otpRecord.can_create_password) {
+      throw new Error("CANNOT_CREATE_PASSWORD");
+    }
+
+    // Find user
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      throw new Error("USER_NOT_FOUND");
     }
 
     // Update password
     user.password = new_password;
-    user.reset_password_token = undefined;
-    user.reset_password_expires = undefined;
     await user.save();
+
+    // Delete the OTP record after successful password reset
+    await OTP.deleteOne({ _id: otpRecord._id });
 
     // Log password change
     await logActivity({
@@ -362,13 +365,13 @@ class AuthService {
    */
   changePassword = async (
     userId,
-    currentPassword,
+    current_password,
     new_password,
     confirm_password,
     req,
   ) => {
     // Validate input
-    if (!currentPassword || !new_password || !confirm_password) {
+    if (!current_password || !new_password || !confirm_password) {
       throw new Error("MISSING_FIELDS");
     }
 
@@ -388,7 +391,7 @@ class AuthService {
     }
 
     // Verify current password
-    const isPasswordValid = await user.comparePassword(currentPassword);
+    const isPasswordValid = await user.comparePassword(current_password);
     if (!isPasswordValid) {
       throw new Error("INVALID_PASSWORD");
     }
@@ -441,7 +444,7 @@ class AuthService {
         name: user.name,
         role: user.role,
         permissions: permObj,
-        entities: entityIds, // Include entity IDs in token
+        entities: entityIds,
         primary_entity_id: user.primary_entity_id || null,
       },
       process.env.JWT_SECRET,
@@ -490,7 +493,6 @@ class AuthService {
       last_login: userObj.last_login || null,
       created_at: userObj.created_at,
       updated_at: userObj.updated_at,
-      // Include entities in sanitized output
       entities: formattedEntities,
       primary_entity_id: userObj.primary_entity_id || null,
     };

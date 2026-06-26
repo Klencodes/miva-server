@@ -109,7 +109,6 @@ const requireEntity = (req, res, next) => {
 
   // All other roles must belong to the requested entity
   const userEntities = req.user.entities || [];
-  console.log(req.user, "req.user>>>>>>>")
   
   // Check if the entityId is in the user's entities array
   if (!userEntities.includes(entityId)) {

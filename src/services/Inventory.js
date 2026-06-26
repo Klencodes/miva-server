@@ -14,59 +14,80 @@ class InventoryService {
   /**
    * Get all inventory items with pagination and filtering
    */
-  async getItems(entityId, filters = {}, page = 1, limit = 10) {
-    const skip = (page - 1) * limit;
-    const query = { entity_id: entityId };
+  // services/inventoryService.js
 
-    // Apply filters
-    if (filters.search) {
-      query.$or = [
-        { name: { $regex: filters.search, $options: 'i' } },
-        { part_number: { $regex: filters.search, $options: 'i' } },
-        { supplier: { $regex: filters.search, $options: 'i' } },
-        { 'metadata.location': { $regex: filters.search, $options: 'i' } },
-      ];
-    }
+async getItems(entityId, filters = {}, page = 1, limit = 10) {
+  const skip = (page - 1) * limit;
+  const query = {};
 
-    if (filters.type) {
-      query.type = filters.type;
-    }
+  // 🔥 FIX: Handle missing entity ID
+  if (!entityId) {
+    console.warn('⚠️ No entity ID provided for inventory query');
+    // Option 1: Return empty result
+    return {
+      items: [],
+      count: 0,
+      page,
+      limit,
+      totalPages: 0,
+    };
+    
+    // Option 2: Get items without entity filter (if you want to show all)
+    // query = {};
+  } else {
+    query.entity_id = entityId;
+  }
 
-    if (filters.min_quantity !== undefined) {
-      query.quantity = { ...query.quantity, $gte: parseInt(filters.min_quantity) };
-    }
+  // Apply filters
+  if (filters.search) {
+    query.$or = [
+      { name: { $regex: filters.search, $options: 'i' } },
+      { part_number: { $regex: filters.search, $options: 'i' } },
+      { supplier: { $regex: filters.search, $options: 'i' } },
+      { 'metadata.location': { $regex: filters.search, $options: 'i' } },
+    ];
+  }
 
-    if (filters.max_quantity !== undefined) {
-      query.quantity = { ...query.quantity, $lte: parseInt(filters.max_quantity) };
-    }
+  if (filters.type) {
+    query.type = filters.type;
+  }
 
-    if (filters.min_price !== undefined) {
-      query.price = { ...query.price, $gte: parseFloat(filters.min_price) };
-    }
+  if (filters.min_quantity !== undefined) {
+    query.quantity = { ...query.quantity, $gte: parseInt(filters.min_quantity) };
+  }
 
-    if (filters.max_price !== undefined) {
-      query.price = { ...query.price, $lte: parseFloat(filters.max_price) };
-    }
+  if (filters.max_quantity !== undefined) {
+    query.quantity = { ...query.quantity, $lte: parseInt(filters.max_quantity) };
+  }
 
-    if (filters.stock_status === 'low_stock') {
-      query.$expr = { $lte: ['$quantity', '$reorder_threshold'] };
-      query.quantity = { $gt: 0 };
-    } else if (filters.stock_status === 'out_of_stock') {
-      query.quantity = 0;
-    } else if (filters.stock_status === 'in_stock') {
-      query.quantity = { $gt: 0 };
-    }
+  if (filters.min_price !== undefined) {
+    query.price = { ...query.price, $gte: parseFloat(filters.min_price) };
+  }
 
-    if (filters.supplier) {
-      query.supplier = { $regex: filters.supplier, $options: 'i' };
-    }
+  if (filters.max_price !== undefined) {
+    query.price = { ...query.price, $lte: parseFloat(filters.max_price) };
+  }
 
-    if (filters.metadata) {
-      Object.entries(filters.metadata).forEach(([key, value]) => {
-        query[`metadata.${key}`] = value;
-      });
-    }
+  if (filters.stock_status === 'low_stock') {
+    query.$expr = { $lte: ['$quantity', '$reorder_threshold'] };
+    query.quantity = { $gt: 0 };
+  } else if (filters.stock_status === 'out_of_stock') {
+    query.quantity = 0;
+  } else if (filters.stock_status === 'in_stock') {
+    query.quantity = { $gt: 0 };
+  }
 
+  if (filters.supplier) {
+    query.supplier = { $regex: filters.supplier, $options: 'i' };
+  }
+
+  if (filters.metadata) {
+    Object.entries(filters.metadata).forEach(([key, value]) => {
+      query[`metadata.${key}`] = value;
+    });
+  }
+
+  try {
     const [items, total] = await Promise.all([
       Inventory.find(query)
         .sort({ created_at: -1 })
@@ -75,9 +96,11 @@ class InventoryService {
       Inventory.countDocuments(query),
     ]);
 
+    console.log(`✅ Found ${total} inventory items for entity ${entityId || 'all'}`);
+
     // Format currency values in items
     const formattedItems = items.map(i => {
-      const item = i.toSafeObject();
+      const item = i.toSafeObject ? i.toSafeObject() : i.toObject();
       if (item.cost !== undefined) item.cost = this.formatCurrency(item.cost);
       if (item.price !== undefined) item.price = this.formatCurrency(item.price);
       return item;
@@ -90,7 +113,11 @@ class InventoryService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  } catch (error) {
+    console.error('❌ Error fetching inventory items:', error);
+    throw error;
   }
+}
 
   /**
    * Get inventory item by UUID

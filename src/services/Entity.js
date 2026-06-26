@@ -121,8 +121,8 @@ class EntityService {
 
       const allEntities = await new Entity({
         uuid: "ALL_ENTITIES",
-        name: "All Entities",
-        branch: "All",
+        name: name || "Organisation",
+        branch: "All Branches",
         email: "system@all-entities.local",
         phone, website, address, city, state, country, zip_code,
         registration_number: registration_number || `SYS-REG-${Date.now()}`,
@@ -229,105 +229,109 @@ class EntityService {
     return this.sanitizeEntity(entity);
   };
 
-  /**
-   * Update entity
-   */
-  updateEntity = async (uuid, updateData, req) => {
-    const {
-      name,
-      email,
-      phone,
-      website,
-      address,
-      city,
-      state,
-      country,
-      zip_code,
+
+/**
+ * Update entity
+ */
+updateEntity = async (uuid, updateData, req) => {
+  const {
+    name,
+    email,
+    phone,
+    website,
+    address,
+    city,
+    state,
+    country,
+    zip_code,
+    registration_number,
+    tax_id,
+    branch,
+    currency,
+    metadata,
+    is_active,
+  } = updateData;
+
+  // Find entity
+  const entity = await Entity.findOne({ uuid });
+  if (!entity) {
+    throw new Error("ENTITY_NOT_FOUND");
+  }
+
+  // Check email uniqueness if being updated
+  if (email && email.toLowerCase() !== entity.email) {
+    const existingEntity = await Entity.findOne({
+      email: email.toLowerCase(),
+      _id: { $ne: entity._id },
+    });
+    if (existingEntity) {
+      throw new Error("EMAIL_ALREADY_EXISTS");
+    }
+  }
+
+  // Check registration number uniqueness if being updated
+  if (registration_number && registration_number !== entity.registration_number) {
+    const existingReg = await Entity.findOne({
       registration_number,
+      _id: { $ne: entity._id },
+    });
+    if (existingReg) {
+      throw new Error("REGISTRATION_NUMBER_ALREADY_EXISTS");
+    }
+  }
+
+  // Check tax ID uniqueness if being updated
+  if (tax_id && tax_id !== entity.tax_id) {
+    const existingTax = await Entity.findOne({
       tax_id,
-      branch,
-      currency,
-      metadata,
-      is_active,
-    } = updateData;
-
-    // Find entity
-    const entity = await Entity.findOne({ uuid });
-    if (!entity) {
-      throw new Error("ENTITY_NOT_FOUND");
+      _id: { $ne: entity._id },
+    });
+    if (existingTax) {
+      throw new Error("TAX_ID_ALREADY_EXISTS");
     }
+  }
 
-    // Check email uniqueness if being updated
-    if (email && email.toLowerCase() !== entity.email) {
-      const existingEntity = await Entity.findOne({
-        email: email.toLowerCase(),
-        _id: { $ne: entity._id },
-      });
-      if (existingEntity) {
-        throw new Error("EMAIL_ALREADY_EXISTS");
-      }
-    }
-
-    // Check registration number uniqueness if being updated
-    if (registration_number && registration_number !== entity.registration_number) {
-      const existingReg = await Entity.findOne({
-        registration_number,
-        _id: { $ne: entity._id },
-      });
-      if (existingReg) {
-        throw new Error("REGISTRATION_NUMBER_ALREADY_EXISTS");
-      }
-    }
-
-    // Check tax ID uniqueness if being updated
-    if (tax_id && tax_id !== entity.tax_id) {
-      const existingTax = await Entity.findOne({
-        tax_id,
-        _id: { $ne: entity._id },
-      });
-      if (existingTax) {
-        throw new Error("TAX_ID_ALREADY_EXISTS");
-      }
-    }
-
-    // Update fields
-    if (name) entity.name = name;
-    if (email) entity.email = email.toLowerCase();
-    if (phone !== undefined) entity.phone = phone;
-    if (website !== undefined) entity.website = website;
-    if (address !== undefined) entity.address = address;
-    if (city !== undefined) entity.city = city;
-    if (state !== undefined) entity.state = state;
-    if (country !== undefined) entity.country = country;
-    if (zip_code !== undefined) entity.zip_code = zip_code;
-    if (registration_number !== undefined) entity.registration_number = registration_number;
-    if (tax_id !== undefined) entity.tax_id = tax_id;
-    if (branch !== undefined) entity.branch = branch;
-    if (currency !== undefined) entity.currency = currency;
+  // Update fields
+  if (name) entity.name = name;
+  if (email) entity.email = email.toLowerCase();
+  if (phone !== undefined) entity.phone = phone;
+  if (website !== undefined) entity.website = website;
+  if (address !== undefined) entity.address = address;
+  if (city !== undefined) entity.city = city;
+  if (state !== undefined) entity.state = state;
+  if (country !== undefined) entity.country = country;
+  if (zip_code !== undefined) entity.zip_code = zip_code;
+  if (registration_number !== undefined) entity.registration_number = registration_number;
+  if (tax_id !== undefined) entity.tax_id = tax_id;
+  if (branch !== undefined) entity.branch = branch;
+  if (currency !== undefined) entity.currency = currency;
+  
+  // 🔥 FIX: Handle metadata properly
+  if (metadata !== undefined && metadata !== null) {
+    // Ensure entity.metadata is a plain object
+    const currentMetadata = entity.metadata instanceof Map 
+      ? Object.fromEntries(entity.metadata) 
+      : (entity.metadata || {});
     
-    // Handle metadata properly
-    if (metadata !== undefined) {
-      // Check if entity.metadata is a Map
-      if (entity.metadata instanceof Map) {
-        // Merge new metadata into existing Map
-        Object.entries(metadata).forEach(([key, value]) => {
-          entity.metadata.set(key, value);
-        });
-      } else {
-        // If it's a plain object, merge normally
-        entity.metadata = { ...entity.metadata, ...metadata };
-      }
-    }
-    
-    if (is_active !== undefined) entity.is_active = is_active;
+    // Merge new metadata with existing
+    entity.metadata = {
+      ...currentMetadata,
+      ...metadata
+    };
+  }
+  
+  if (is_active !== undefined) entity.is_active = is_active;
 
-    entity.updated_by = req.user?.uuid || null;
-    
-    // Save the entity
-    await entity.save();
-    
-    return this.sanitizeEntity(entity);
-  };
+  entity.updated_by = req.user?.uuid || null;
+  
+  // Save the entity
+  await entity.save();
+  
+  // 🔥 Force reload to ensure we have the latest data
+  const updatedEntity = await Entity.findOne({ uuid });
+  
+  return this.sanitizeEntity(updatedEntity);
+};
 
   /**
    * Delete entity (soft delete)
@@ -536,31 +540,41 @@ class EntityService {
   /**
    * Sanitize entity object
    */
-  sanitizeEntity(entity) {
-    const entityObj = entity.toObject ? entity.toObject() : entity;
-    return {
-      uuid: entityObj.uuid,
-      name: entityObj.name,
-      email: entityObj.email,
-      phone: entityObj.phone,
-      website: entityObj.website,
-      address: entityObj.address,
-      city: entityObj.city,
-      state: entityObj.state,
-      country: entityObj.country,
-      zip_code: entityObj.zip_code,
-      registration_number: entityObj.registration_number,
-      tax_id: entityObj.tax_id,
-      branch: entityObj.branch,
-      currency: entityObj.currency || "GHS",
-      is_active: entityObj.is_active,
-      is_system_entity: entityObj.is_system_entity || false,
-      settings: entityObj.settings || {},
-      metadata: entityObj.metadata || {},
-      created_at: entityObj.created_at,
-      updated_at: entityObj.updated_at,
-    };
+/**
+ * Sanitize entity object
+ */
+sanitizeEntity(entity) {
+  const entityObj = entity.toObject ? entity.toObject() : entity;
+  
+  // Handle metadata properly if it's a Map
+  let metadata = entityObj.metadata || {};
+  if (metadata instanceof Map) {
+    metadata = Object.fromEntries(metadata);
   }
+  
+  return {
+    uuid: entityObj.uuid,
+    name: entityObj.name,
+    email: entityObj.email,
+    phone: entityObj.phone,
+    website: entityObj.website,
+    address: entityObj.address,
+    city: entityObj.city,
+    state: entityObj.state,
+    country: entityObj.country,
+    zip_code: entityObj.zip_code,
+    registration_number: entityObj.registration_number,
+    tax_id: entityObj.tax_id,
+    branch: entityObj.branch,
+    currency: entityObj.currency || "GHS",
+    is_active: entityObj.is_active,
+    is_system_entity: entityObj.is_system_entity || false,
+    settings: entityObj.settings || {},
+    metadata: metadata, // Use the processed metadata
+    created_at: entityObj.created_at,
+    updated_at: entityObj.updated_at,
+  };
+}
 }
 
 module.exports = new EntityService();

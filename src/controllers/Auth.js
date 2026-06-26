@@ -101,51 +101,62 @@ class AuthController {
     }
   };
 
-  /**
-   * POST /api/auth/forgot-password
-   * Request password reset
-   */
-  forgotPassword = async (req, res) => {
-    try {
-      const { email } = req.body;
 
-      if (!email) {
-        const error = new Error('MISSING_EMAIL');
+/**
+ * POST /api/auth/forgot-password
+ * Request password reset
+ */
+forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      const error = new Error('MISSING_EMAIL');
+      error.status = 400;
+      throw error;
+    }
+
+    // 🔥 FIX: Add await here
+    const result = await AuthService.forgotPassword(email, req);
+    console.log("Forgot password result:", result);
+
+    // 🔥 FIX: Only send OTP if user exists
+    if (result.user) {
+      await OTPService.sendOTP(email, "password_reset", req);
+      console.log("OTP sent successfully for password reset");
+    }
+
+    const response = new ApiResponse(
+      { email },
+      "If an account exists with that email, you will receive password reset instructions."
+    );
+    return res.status(200).json(response);
+    
+  } catch (error) {
+    console.error('Forgot password error:', error);
+    return this.handleError(error, res);
+  }
+};
+  /**
+   * POST /api/auth/reset-password
+   * Reset password using OTP
+   * Payload: { otp, email, new_password, confirm_password }
+   */
+  resetPassword = async (req, res) => {
+    try {
+      const { otp, email, new_password, confirm_password } = req.body;
+
+      // Validate required fields
+      if (!otp || !email || !new_password || !confirm_password) {
+        const error = new Error('MISSING_RESET_FIELDS');
         error.status = 400;
         throw error;
       }
 
-      // Check if user exists
-      const user = await User.findOne({ email: email.toLowerCase() });
-      if (!user) {
-        const error = new Error('USER_NOT_FOUND');
-        error.status = 404;
-        throw error;
-      }
-
-      // Send OTP for password reset
-      await OTPService.sendOTP(email, "password_reset", req);
-
-      const response = new ApiResponse(
-        { email },
-        "Password reset code sent to your email"
-      );
-      return res.json(response);
-    } catch (error) {
-      return this.handleError(error, res);
-    }
-  };
-
-  /**
-   * POST /api/auth/reset-password
-   * Reset password using token
-   */
-  resetPassword = async (req, res) => {
-    try {
-      const { token, new_password, confirm_password } = req.body;
-
+      // Call AuthService.resetPassword with the new payload
       const result = await AuthService.resetPassword(
-        token,
+        otp,
+        email,
         new_password,
         confirm_password,
         req
@@ -167,11 +178,11 @@ class AuthController {
    */
   changePassword = async (req, res) => {
     try {
-      const { currentPassword, new_password, confirm_password } = req.body;
-
+      const { payload } = req.body;
+      const {current_password, new_password, confirm_password } = payload;
       await AuthService.changePassword(
         req.user.uuid,
-        currentPassword,
+        current_password,
         new_password,
         confirm_password,
         req
@@ -259,38 +270,45 @@ class AuthController {
   /**
    * Verify OTP
    */
-  verifyOTP = async (req, res) => {
-    try {
-      const { email, otp, type = "verification" } = req.body;
+verifyOTP = async (req, res) => {
+  try {
+    const { email, otp, type = "verification" } = req.body;
 
-      if (!email || !otp) {
-        const error = new Error('MISSING_OTP_FIELDS');
-        error.status = 400;
-        throw error;
-      }
+    console.log('🔍 Verifying OTP:', { email, otp, type }); // Add this
 
-      const result = await OTPService.verifyOTP(email, otp, type);
+    if (!email || !otp) {
+      const error = new Error('MISSING_OTP_FIELDS');
+      error.status = 400;
+      throw error;
+    }
 
-      if (!result.success) {
-        const error = new Error(result.error || 'OTP_VERIFICATION_FAILED');
-        error.status = 400;
-        throw error;
-      }
+    const result = await OTPService.verifyOTP(email, otp, type);
+    console.log('📝 OTP verification result:', result); // Add this
 
-      // Get user
-      const user = await User.findOne({ email: email.toLowerCase() })
-        .select("-password -reset_password_token -reset_password_expires");
+    if (!result.success) {
+      const error = new Error(result.error || 'OTP_VERIFICATION_FAILED');
+      error.status = 400;
+      throw error;
+    }
 
-      if (!user) {
-        const error = new Error('USER_NOT_FOUND');
-        error.status = 404;
-        throw error;
-      }
+    // Get user
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select("-password -reset_password_token -reset_password_expires");
+
+    console.log('👤 User found:', user ? user.email : 'Not found'); // Add this
+    console.log('✅ User verified status:', user?.verified); // Add this
+
+    if (!user) {
+      const error = new Error('USER_NOT_FOUND');
+      error.status = 404;
+      throw error;
+    }
 
       // Mark as verified if verification type
       if (type === "verification" && !user.verified) {
         user.verified = true;
         await user.save();
+        console.log('✅ User marked as verified'); // Add this
 
         await logActivity({
           user_id: user._id,
@@ -303,6 +321,9 @@ class AuthController {
           status: "success",
         });
       }
+
+      // For password_reset, set can_create_password flag on OTP
+      // This is handled in OTPService.verifyOTP now
 
       // Generate token
       const token = AuthService.generateToken(user);
@@ -420,6 +441,10 @@ class AuthController {
         status: 400,
         message: 'All fields are required'
       },
+      'MISSING_RESET_FIELDS': {
+        status: 400,
+        message: 'OTP, email, new password, and confirm password are required'
+      },
       'PASSWORD_MISMATCH': {
         status: 400,
         message: 'Passwords do not match'
@@ -455,6 +480,10 @@ class AuthController {
       'OTP_RESEND_FAILED': {
         status: 400,
         message: 'Failed to resend OTP'
+      },
+      'CANNOT_CREATE_PASSWORD': {
+        status: 403,
+        message: 'OTP not verified for password reset. Please verify first.'
       }
     };
 

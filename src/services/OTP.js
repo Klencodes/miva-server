@@ -59,73 +59,118 @@ class OTPService {
       email_sent: emailResult.success,
     };
   }
+// services/OTPService.js
 
-  /**
-   * Verify OTP
-   */
-  async verifyOTP(email, otp, type = "verification") {
+/**
+ * Verify OTP
+ */
+verifyOTP = async (email, otp, type = "verification") => {
+  try {
+    // Find the OTP
     const otpRecord = await OTP.findOne({
       email: email.toLowerCase(),
       otp,
       type,
-      verified: false,
-    }).sort({ created_at: -1 });
-
+      expires_at: { $gt: new Date() },
+      is_used: false, 
+    });
     if (!otpRecord) {
       return {
         success: false,
-        error: "INVALID_OTP",
-        message: "Invalid verification code",
+        error: 'OTP_VERIFICATION_FAILED',
+        message: 'Invalid or expired OTP'
       };
     }
 
-    if (new Date() > otpRecord.expires_at) {
-      return { success: false, error: "OTP_EXPIRED", message: "Code expired" };
+    // Mark OTP as used
+    otpRecord.is_used = true;
+    
+    if (type === "password_reset") {
+      otpRecord.can_create_password = true;
     }
-
-    if (otpRecord.attempts >= otpRecord.max_attempts) {
-      return {
-        success: false,
-        error: "OTP_ATTEMPTS_EXCEEDED",
-        message: "Too many attempts",
-      };
-    }
-
-    otpRecord.attempts += 1;
+    
     await otpRecord.save();
 
-    otpRecord.verified = true;
-    await otpRecord.save();
+    // 🔥 UPDATE USER VERIFIED STATUS
+    if (type === "verification") {
+      const user = await User.findOne({ email: email.toLowerCase() });
+      if (user && !user.verified) {
+        user.verified = true;
+        await user.save();
+        console.log(`✅ User ${email} verified successfully`);
+      }
+    }
 
-    // Delete OTP after successful verification
-    await OTP.deleteOne({ _id: otpRecord._id });
-
-    return { success: true, message: "Verification successful" };
+    return {
+      success: true,
+      message: 'OTP verified successfully'
+    };
+  } catch (error) {
+    console.error('Error verifying OTP:', error);
+    return {
+      success: false,
+      error: 'OTP_VERIFICATION_FAILED',
+      message: 'Failed to verify OTP'
+    };
   }
-
-  /**
-   * Resend OTP
-   */
-  async resendOTP(email, type = "verification", req = null) {
-    // Check if there's a recent OTP (within last 30 seconds)
-    const recentOTP = await OTP.findOne({
+};
+/**
+ * Resend OTP
+ */
+resendOTP = async (email, type = "verification", req) => {
+  try {
+    // Check if there's an existing OTP that hasn't expired
+    const existingOTP = await OTP.findOne({
       email: email.toLowerCase(),
       type,
-      created_at: { $gte: new Date(Date.now() - 30 * 1000) },
+      expires_at: { $gt: new Date() },
+      is_used: false,
     });
 
-    if (recentOTP) {
+    // If there's a valid OTP that hasn't been used, don't allow resend
+    if (existingOTP) {
+      const waitSeconds = Math.ceil((existingOTP.expires_at - new Date()) / 1000);
       return {
         success: false,
-        error: "TOO_FREQUENT",
-        message: "Please wait 30 seconds before requesting a new code",
-        wait_seconds: 30,
+        error: 'OTP_ALREADY_SENT',
+        message: 'OTP already sent. Please wait before requesting a new one.',
+        wait_seconds: Math.min(waitSeconds, 60),
+        expires_at: existingOTP.expires_at,
       };
     }
 
-    // Send new OTP
-    return await this.sendOTP(email, type, req);
+    // Generate new OTP
+    const otp = this.generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Save OTP to database
+    await OTP.create({
+      email: email.toLowerCase(),
+      otp,
+      type,
+      expires_at: expiresAt,
+      is_used: false,
+      can_create_password: false, // Reset this flag for new OTPs
+    });
+
+    // Send OTP email
+    const emailSent = await EmailService.sendOTPEmail(email, otp, type);
+
+    return {
+      success: true,
+      message: 'OTP sent successfully',
+      expires_at: expiresAt,
+      email_sent: emailSent,
+    };
+  } catch (error) {
+    console.error('Error resending OTP:', error);
+    return {
+      success: false,
+      error: 'OTP_RESEND_FAILED',
+      message: 'Failed to resend OTP'
+    };
   }
+};
 }
 
 module.exports = new OTPService();

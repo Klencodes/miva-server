@@ -99,18 +99,23 @@ class EntityController {
    * PUT /api/entities/:uuid
    * Update entity
    */
-  updateEntity = async (req, res) => {
-    try {
-      const { uuid } = req.params;
-      const updateData = req.body;
-      const entity = await EntityService.updateEntity(uuid, updateData, req);
+ // controllers/entityController.js
 
-      const response = new ApiResponse(entity, "Entity updated successfully");
-      return res.json(response);
-    } catch (error) {
-      return this.handleError(error, res);
-    }
-  };
+updateEntity = async (req, res) => {
+  try {
+    const { uuid } = req.params;
+    const updateData = req.body;
+    
+    const result = await EntityService.updateEntity(uuid, updateData, req);
+    
+    
+    const response = new ApiResponse(result, 'Entity updated successfully');
+    return res.json(response);
+  } catch (error) {
+    console.error('❌ Update entity error:', error);
+    return this.handleError(error, res);
+  }
+};
 
   /**
    * PATCH /api/entities/:uuid/active

@@ -29,11 +29,16 @@ const OTPSchema = new mongoose.Schema(
     expires_at: {
       type: Date,
       required: true,
-      index: { expires: 0 }, // TTL index - auto delete after expiry
+      index: true, // Index for TTL
     },
-    verified: {
+    is_used: {
       type: Boolean,
       default: false,
+    },
+    can_create_password: {
+      type: Boolean,
+      default: false,
+      description: "Set to true when OTP is verified for password reset",
     },
     attempts: {
       type: Number,
@@ -52,7 +57,9 @@ const OTPSchema = new mongoose.Schema(
       default: {},
     },
   },
-  { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } }
+  { 
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at" } 
+  }
 );
 
 // Indexes

@@ -9,11 +9,12 @@ const InventorySchema = new mongoose.Schema(
       default: uuidv4,
       immutable: true,
     },
-    entity_id: {
-      type: String,
-      required: true,
-      index: true,
-    },
+     entity_id: {
+    type: String,
+    required: true,
+    index: true,
+    default: null,
+  },
     name: {
       type: String,
       required: true,
