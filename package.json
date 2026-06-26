@@ -22,8 +22,7 @@
     "mongoose": "^7.5.0",
     "nodemailer": "^9.0.1",
     "pdfkit": "^0.19.1",
-    "recharts": "^3.8.1",
-    "uuid": "^14.0.0"
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.13",
