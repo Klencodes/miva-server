@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
-const { v4: uuidv4 } = require('uuid/dist/cjs');
+const uuid = require('uuid');
+const { v4: uuidv4 } = uuid;
 
 const CustomerSchema = new mongoose.Schema(
   {
