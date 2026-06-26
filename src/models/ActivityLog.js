@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 
 const ActivityActions = {
   // Auth
@@ -47,6 +48,7 @@ const ActivityLogSchema = new mongoose.Schema(
     },
     user_name: { type: String }, // denormalized for fast reads
     user_role: { type: String },
+    uuid: { type: String, unique: true, default: randomUUID() },
     action: {
       type: String,
       enum: Object.values(ActivityActions),

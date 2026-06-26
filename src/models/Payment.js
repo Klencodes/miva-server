@@ -1,14 +1,14 @@
 // models/Payment.js
 const mongoose = require("mongoose");
-const uuid = require('uuid');
-const { v4: uuidv4 } = uuid;
+const { randomUUID } = require('crypto');
+
 
 const PaymentSchema = new mongoose.Schema(
   {
     uuid: {
       type: String,
       unique: true,
-      default: uuidv4,
+      default: randomUUID(),
       immutable: true,
     },
     entity_id: {

@@ -1,14 +1,14 @@
 // src/models/Expense.js
 
 const mongoose = require('mongoose');
-const uuid = require('uuid');
-const { v4: uuidv4 } = uuid;
+const { randomUUID } = require('crypto');
+
 const expenseSchema = new mongoose.Schema({
   uuid: {
     type: String,
     required: true,
     unique: true,
-    default: uuidv4,
+    default: randomUUID(),
   },
   entity_id: {
     type: String,

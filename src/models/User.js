@@ -1,8 +1,8 @@
 // models/User.js
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
-const uuid = require('uuid');
-const { v4: uuidv4 } = uuid;
+const { randomUUID } = require('crypto');
+
 
 const UserRoles = {
   SALES: "sales",
@@ -79,7 +79,7 @@ const UserSchema = new mongoose.Schema(
     uuid: {
       type: String,
       unique: true,
-      default: uuidv4,
+      default: randomUUID(),
       immutable: true,
     },
     first_name: { type: String, required: true, trim: true },
