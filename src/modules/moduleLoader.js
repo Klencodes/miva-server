@@ -1,22 +1,21 @@
-/**
- * moduleLoader.js
- * Safely loads route modules so one broken module never crashes the server.
- * Each module is wrapped in a try/catch — if it throws on require(), we log
- * the error and skip that route rather than bringing down the whole process.
- */
+const path = require('path');
+
+// Get the absolute path to the routes directory
+// Assuming moduleLoader.js is in src/modules/ and routes are in src/routes/
+const ROUTES_DIR = path.join(__dirname, '..', 'routes');
 
 const MODULE_REGISTRY = [
-  { name: 'Auth',         path: '../routes/Auth',         mountPath: '/api/auth'          },
-  { name: 'Gmail',        path: '../routes/Gmail',        mountPath: '/api/gmail'         },
-  { name: 'ActivityLogs', path: '../routes/ActivityLogs', mountPath: '/api/activity-logs' },
-  { name: 'Entity',       path: '../routes/Entity',       mountPath: '/api/entities'      },
-  { name: 'Inventory',    path: '../routes/Inventory',    mountPath: '/api/inventory'     },
-  { name: 'Invoice',      path: '../routes/Invoice',      mountPath: '/api/invoices'      },
-  { name: 'User',         path: '../routes/User',         mountPath: '/api/users'         },
-  { name: 'Dashboard',    path: '../routes/Dashboard',    mountPath: '/api/dashboard'     },
-  { name: 'Customer',     path: '../routes/Customer',     mountPath: '/api/customers'     },
-  { name: 'Supplier',     path: '../routes/Supplier',     mountPath: '/api/suppliers'     },
-  { name: 'Expense',      path: '../routes/Expense',      mountPath: '/api/expenses'      },
+  { name: 'Auth',         path: path.join(ROUTES_DIR, 'Auth'),         mountPath: '/api/auth'          },
+  { name: 'Gmail',        path: path.join(ROUTES_DIR, 'Gmail'),        mountPath: '/api/gmail'         },
+  { name: 'ActivityLogs', path: path.join(ROUTES_DIR, 'ActivityLogs'), mountPath: '/api/activity-logs' },
+  { name: 'Entity',       path: path.join(ROUTES_DIR, 'Entity'),       mountPath: '/api/entities'      },
+  { name: 'Inventory',    path: path.join(ROUTES_DIR, 'Inventory'),    mountPath: '/api/inventory'     },
+  { name: 'Invoice',      path: path.join(ROUTES_DIR, 'Invoice'),      mountPath: '/api/invoices'      },
+  { name: 'User',         path: path.join(ROUTES_DIR, 'User'),         mountPath: '/api/users'         },
+  { name: 'Dashboard',    path: path.join(ROUTES_DIR, 'Dashboard'),    mountPath: '/api/dashboard'     },
+  { name: 'Customer',     path: path.join(ROUTES_DIR, 'Customer'),     mountPath: '/api/customers'     },
+  { name: 'Supplier',     path: path.join(ROUTES_DIR, 'Supplier'),     mountPath: '/api/suppliers'     },
+  { name: 'Expense',      path: path.join(ROUTES_DIR, 'Expense'),      mountPath: '/api/expenses'      },
 ];
 
 /**
@@ -32,6 +31,18 @@ function loadModules(app) {
 
   for (const mod of MODULE_REGISTRY) {
     try {
+      // Check if the file exists before requiring
+      try {
+        require.resolve(mod.path);
+      } catch (resolveErr) {
+        // Try with .js extension
+        try {
+          require.resolve(mod.path + '.js');
+        } catch (resolveErr2) {
+          throw new Error(`Route file not found: ${mod.path}.js - Check if the file exists and has the correct name`);
+        }
+      }
+
       const router = require(mod.path);
 
       // Sanity-check: make sure we got something Express can mount
