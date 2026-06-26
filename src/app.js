@@ -35,7 +35,6 @@ const moduleStatus = loadModules(app);
 // ── 4. Health check (always available) ───────────────────────────────────────
 app.get('/health', (_req, res) => {
   const db = getDBStatus();
-
   res.json({
     status:      'ok',
     timestamp:   new Date().toISOString(),

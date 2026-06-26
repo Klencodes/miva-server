@@ -13,13 +13,14 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:4000',
   'http://localhost:5000',
-  'https://miva-chi.vercel.app/'
+  'https://miva-chi.vercel.app',
+  '*'
 ].filter(Boolean); // drop undefined if FRONTEND_URL isn't set
 
 function applyCoreMiddleware(app) {
   // ── CORS ────────────────────────────────────────────────────────────────────
   app.use(cors({
-    origin:         ALLOWED_ORIGINS,
+    origin:         "*",
     methods:        ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Entity', 'X-Requested-With'],
     credentials:    true,
