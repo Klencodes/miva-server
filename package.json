@@ -3,9 +3,10 @@
   "version": "1.0.0",
   "main": "server.js",
   "scripts": {
-    "dev": "nodemon src/server.ts",
-    "build": "tsc",
-    "start": "node server.js"
+    "dev": "nodemon server.ts",
+    "start": "node server.js",
+    "build": "vercel --prod",
+    "vercel-build": "npm install"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
