@@ -1,12 +1,13 @@
 // src/models/Expense.js
 
 const mongoose = require('mongoose');
-
+const { v4: uuidv4 } = require('uuid/dist/cjs');
 const expenseSchema = new mongoose.Schema({
   uuid: {
     type: String,
     required: true,
     unique: true,
+    default: uuidv4,
   },
   entity_id: {
     type: String,

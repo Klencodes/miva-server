@@ -1,6 +1,6 @@
 // models/Payment.js
 const mongoose = require("mongoose");
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require('uuid/dist/cjs');
 
 const PaymentSchema = new mongoose.Schema(
   {

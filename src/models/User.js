@@ -1,7 +1,7 @@
 // models/User.js
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require('uuid/dist/cjs');
 
 const UserRoles = {
   SALES: "sales",
