@@ -1,6 +1,6 @@
 const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require('crypto');
 
 class EmailService {
   constructor() {
@@ -66,7 +66,7 @@ class EmailService {
           <tr>
             <td align="center" style="padding: 32px 32px 24px;">
               <img
-                src="${process.env.LOGO_URL || "https://yourdomain.com/logo.png"}"
+                src="${process.env.LOGO_URL || "/logo.png"}"
                 alt="MIVA Prestige"
                 width="180"
                 style="display:block; max-width:180px; height:auto;"
